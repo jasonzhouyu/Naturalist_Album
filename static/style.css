@@ -416,6 +416,16 @@ button.mini { font-size: 0.7rem; padding: 0.15em 0.4em; min-width: 2em; }
     gap: 0.2rem;
 }
 
+.card-loc-input {
+    width: 100%;
+    font-size: 0.7rem;
+    padding: 2px 4px;
+    margin-top: 0.3rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
 .batch-card-check {
     position: absolute;
     top: 0.35rem;

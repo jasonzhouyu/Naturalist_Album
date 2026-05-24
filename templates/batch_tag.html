@@ -22,7 +22,8 @@
             <span style="white-space:nowrap">拍摄地址:</span>
             <input id="location-input" type="text" value="{{ session.default_location }}" placeholder="输入拍摄地址" style="max-width:250px">
         </label>
-        <button onclick="applyLocation()" class="secondary" style="white-space:nowrap">应用到全部</button>
+        <button onclick="applyLocation(null)" class="secondary" style="white-space:nowrap">应用到全部</button>
+        <button onclick="applyLocation(getSelectedIndices())" class="secondary" style="white-space:nowrap">应用到所选</button>
     </div>
 
     <div class="toolbar-row">
@@ -61,10 +62,9 @@
                     {% else %}未标记
                     {% endif %}
                 </span>
-                {% if f.location %}
-                <span class="tag-location" title="{{ f.location }}">{{ f.location }}</span>
-                {% endif %}
+                <span id="loc-{{ f.index }}" class="tag-location" title="{{ f.location or '' }}" style="{% if not f.location %}display:none{% endif %}">{{ f.location or '' }}</span>
             </div>
+            <input id="loc-input-{{ f.index }}" type="text" class="card-loc-input" value="{{ f.location or '' }}" placeholder="地点" onchange="setOneLocation({{ f.index }}, this.value)">
             <div class="batch-card-actions">
                 <button onclick="tagOne({{ f.index }}, 'relic')" class="mini tag-btn-relic" title="文物">文</button>
                 <button onclick="tagOne({{ f.index }}, 'animal')" class="mini tag-btn-animal" title="动物">动</button>
@@ -155,18 +155,50 @@ function refreshCards() {
             const labels = {relic: '文物', animal: '动物', plant: '植物', null: '未标记'};
             tagEl.textContent = labels[f.category] || '未标记';
         }
+        // Refresh location display
+        const locEl = document.getElementById(`loc-${f.index}`);
+        if (locEl) {
+            if (f.location) {
+                locEl.textContent = f.location;
+                locEl.title = f.location;
+                locEl.style.display = '';
+            } else {
+                locEl.style.display = 'none';
+            }
+        }
     });
     updateCounter();
 }
 
-async function applyLocation() {
+async function applyLocation(indices) {
     const loc = document.getElementById('location-input').value.trim();
     if (!loc) return;
+    if (indices && indices.length === 0) {
+        alert('请先勾选照片，或使用"应用到全部"');
+        return;
+    }
     try {
         const resp = await fetch(`/batch/${SESSION_ID}/location`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({location: loc, indices: null})
+            body: JSON.stringify({location: loc, indices: indices})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            files = data.files;
+            refreshCards();
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+
+async function setOneLocation(index, location) {
+    try {
+        const resp = await fetch(`/batch/${SESSION_ID}/location`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({location: location, indices: [index]})
         });
         const data = await resp.json();
         if (data.ok) {
