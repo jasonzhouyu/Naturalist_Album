@@ -1,0 +1,15 @@
+services:
+  nature-album:
+    build: .
+    container_name: nature-album
+    ports:
+      - "8000:8000"
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+    volumes:
+      - ./album:/app/album
+      - ./thumbs:/app/thumbs
+      - ./metadata_relic.json:/app/metadata_relic.json
+      - ./metadata_animal.json:/app/metadata_animal.json
+      - ./metadata_plant.json:/app/metadata_plant.json
+    restart: unless-stopped
