@@ -2,11 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install libraw for rawpy
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libraw-dev \
-    && rm -rf /var/lib/apt/lists/*
-
+# rawpy wheels include bundled libraw, no system package needed
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

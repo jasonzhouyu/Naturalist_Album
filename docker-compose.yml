@@ -1,6 +1,12 @@
 services:
   nature-album:
-    build: .
+    build:
+      context: .
+      args:
+        - HTTP_PROXY=
+        - HTTPS_PROXY=
+        - http_proxy=
+        - https_proxy=
     container_name: nature-album
     ports:
       - "8000:8000"
