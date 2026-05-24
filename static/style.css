@@ -1,0 +1,272 @@
+/* ===== 全局 ===== */
+:root {
+    --card-radius: 12px;
+}
+
+/* ===== 品类选择首页 ===== */
+.category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.category-card {
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.15s ease;
+}
+
+.category-card:hover {
+    transform: translateY(-4px);
+}
+
+.category-card article {
+    padding: 2.5rem 2rem;
+    text-align: center;
+}
+
+.category-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.category-card h2 {
+    margin-bottom: 0.5rem;
+}
+
+.category-card p {
+    color: #666;
+    font-size: 0.95rem;
+    margin-bottom: 0.75rem;
+}
+
+.category-card small {
+    color: #999;
+}
+
+/* ===== 照片网格 (品类相册) ===== */
+.card-link {
+    text-decoration: none;
+    color: inherit;
+}
+
+.artifact-card {
+    padding: 0;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.artifact-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+
+.artifact-card img {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    display: block;
+}
+
+.artifact-card footer {
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.artifact-card footer strong {
+    flex: 1;
+}
+
+/* 置信度 */
+.badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: #eee;
+    color: #666;
+}
+
+.badge.high { background: #d4edda; color: #155724; }
+.badge.medium { background: #fff3cd; color: #856404; }
+.badge.low { background: #f8d7da; color: #721c24; }
+
+/* ===== 相册浏览 ===== */
+.album-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.album-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.album-card img {
+    width: 100%;
+    height: 300px;
+    object-fit: cover;
+    display: block;
+}
+
+.album-info {
+    padding: 1rem;
+}
+
+.album-info h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.1rem;
+}
+
+.album-info p {
+    margin: 0 0 0.25rem 0;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.album-info small {
+    color: #999;
+}
+
+/* ===== 详情页 ===== */
+.detail-layout {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.detail-image {
+    margin-bottom: 1.5rem;
+    border-radius: var(--card-radius);
+    overflow: hidden;
+}
+
+.detail-image img {
+    width: 100%;
+    max-height: 60vh;
+    object-fit: contain;
+    background: #f5f5f5;
+    display: block;
+}
+
+.subtitle {
+    color: #666;
+    font-size: 1.05rem;
+    margin-top: -0.25rem;
+    margin-bottom: 1rem;
+}
+
+.info-table {
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.info-table th {
+    width: 110px;
+    color: #666;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.detail-description {
+    background: #f9f9f9;
+    border-radius: var(--card-radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.detail-description h2 {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+}
+
+.detail-description p {
+    line-height: 1.8;
+    color: #444;
+}
+
+.detail-edit {
+    background: #f9f9f9;
+    border-radius: var(--card-radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.detail-edit h2 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+/* ===== 上传页 ===== */
+.drop-zone {
+    border: 3px dashed #ccc;
+    border-radius: var(--card-radius);
+    padding: 4rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    margin-bottom: 1.5rem;
+}
+
+.drop-zone:hover,
+.drop-zone.active {
+    border-color: var(--pico-primary);
+    background: rgba(var(--pico-primary-rgb), 0.04);
+}
+
+.drop-zone .hint {
+    color: #999;
+    font-size: 0.85rem;
+}
+
+.upload-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-bottom: 2rem;
+}
+
+.progress-area {
+    text-align: center;
+}
+
+.progress-area progress {
+    width: 100%;
+    max-width: 400px;
+    margin: 1rem 0;
+}
+
+#results {
+    text-align: left;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+#results .success {
+    color: #155724;
+}
+
+#results .error {
+    color: #721c24;
+}
+
+/* ===== 空状态 ===== */
+.empty-state {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: #999;
+}
+
+/* ===== 面包屑 ===== */
+nav[aria-label="breadcrumb"] {
+    margin-bottom: 1rem;
+}

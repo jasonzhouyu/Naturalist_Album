@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ label }}相册{% endblock %}
+{% block content %}
+
+<h1>{{ label }}相册
+    <a href="/upload/{{ category }}" role="button" class="secondary" style="float:right;margin-top:-4px">上传照片</a>
+</h1>
+
+{% if artifacts %}
+<div class="album-grid">
+    {% for a in artifacts %}
+    <a href="/{{ category }}/{{ a.id }}" class="card-link">
+        <article class="album-card">
+            <img src="/thumbs/{{ a.filename }}" alt="{{ a.get('name', a.get('chinese_name', '')) }}" loading="lazy">
+            <div class="album-info">
+                <h3>{{ a.get('name', a.get('chinese_name', '未知')) }}</h3>
+                {% if category == 'relic' %}
+                <p>{{ a.dynasty or '' }}{% if a.material %} · {{ a.material }}{% endif %}</p>
+                {% if a.museum and a.museum != '未知' %}
+                <small>{{ a.museum }}</small>
+                {% endif %}
+                {% else %}
+                <p><em>{{ a.get('scientific_name', '') }}</em></p>
+                {% if a.family and a.family != '未知' %}
+                <small>{{ a.family }}科 · {{ a.get('genus', '') }}属</small>
+                {% endif %}
+                {% endif %}
+            </div>
+        </article>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>还没有收录任何{{ label }}。</p>
+    <a href="/upload/{{ category }}" role="button">上传第一张照片</a>
+</div>
+{% endif %}
+
+{% endblock %}

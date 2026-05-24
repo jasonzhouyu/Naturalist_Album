@@ -1,0 +1,13 @@
+__pycache__/
+uploads/
+album/**/*
+!album/**/.gitkeep
+thumbs/**/*
+!thumbs/**/.gitkeep
+*.pyc
+*.cr2
+*.cr3
+*.nef
+*.arw
+*.dng
+migrate.py

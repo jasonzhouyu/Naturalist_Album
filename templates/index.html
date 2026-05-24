@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}自然观察相册{% endblock %}
+{% block content %}
+
+<h1>选择品类</h1>
+
+<div class="category-grid">
+    <a href="/relic" class="category-card">
+        <article>
+            <div class="category-icon">🏺</div>
+            <h2>文物</h2>
+            <p>识别文物朝代、材质、出土地，生成专业简介</p>
+            <small>{{ counts.relic }} 条记录</small>
+        </article>
+    </a>
+
+    <a href="/animal" class="category-card">
+        <article>
+            <div class="category-icon">🐾</div>
+            <h2>动物</h2>
+            <p>识别物种分类（界门纲目科属种）、分布区域、栖息环境</p>
+            <small>{{ counts.animal }} 条记录</small>
+        </article>
+    </a>
+
+    <a href="/plant" class="category-card">
+        <article>
+            <div class="category-icon">🌿</div>
+            <h2>植物</h2>
+            <p>识别物种分类、分布区域、生长环境、生态价值</p>
+            <small>{{ counts.plant }} 条记录</small>
+        </article>
+    </a>
+</div>
+
+{% endblock %}

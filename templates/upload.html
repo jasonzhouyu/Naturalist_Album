@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}上传{{ label }}照片{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">首页</a></li>
+        <li><a href="/{{ category }}">{{ label }}</a></li>
+        <li>上传照片</li>
+    </ul>
+</nav>
+
+<h1>上传{{ label }}照片</h1>
+
+<div
+    id="drop-zone"
+    class="drop-zone"
+    ondragover="event.preventDefault(); this.classList.add('active')"
+    ondragleave="this.classList.remove('active')"
+    ondrop="handleDrop(event)"
+>
+    <p><strong>拖拽文件或文件夹到此处</strong></p>
+    <p>支持 JPG / PNG / WebP / CR2 / CR3 等格式</p>
+    <p class="hint">佳能 RAW (.CR2 / .CR3) 会自动提取预览</p>
+</div>
+
+<div class="upload-buttons">
+    <button onclick="document.getElementById('file-input').click()">选择文件</button>
+    <button onclick="document.getElementById('folder-input').click()">选择文件夹</button>
+</div>
+
+<input id="file-input" type="file" multiple hidden
+       accept=".jpg,.jpeg,.png,.webp,.cr2,.cr3,.nef,.arw,.dng"
+       onchange="handleFiles(this.files)">
+<input id="folder-input" type="file" multiple hidden
+       webkitdirectory directory
+       onchange="handleFiles(this.files)">
+
+<div id="progress" class="progress-area" style="display:none">
+    <h3 id="progress-title">处理中...</h3>
+    <progress id="progress-bar" value="0" max="100"></progress>
+    <div id="results"></div>
+</div>
+
+<script>
+const category = '{{ category }}';
+
+async function handleFiles(files) {
+    if (!files || files.length === 0) return;
+    const dropZone = document.getElementById('drop-zone');
+    const progressArea = document.getElementById('progress');
+    const progressBar = document.getElementById('progress-bar');
+    const results = document.getElementById('results');
+    const title = document.getElementById('progress-title');
+
+    dropZone.style.display = 'none';
+    document.querySelector('.upload-buttons').style.display = 'none';
+    progressArea.style.display = 'block';
+    results.innerHTML = '';
+
+    const total = files.length;
+    let done = 0;
+
+    for (const file of files) {
+        title.textContent = `处理中 (${done + 1}/${total}): ${file.name}`;
+        progressBar.value = (done / total) * 100;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch('/upload/' + category, { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (data.error) {
+                results.innerHTML += `<p class="error">${file.name}: ${data.error}</p>`;
+            } else {
+                const displayName = data.name || data.chinese_name || '未知';
+                results.innerHTML += `
+                    <p class="success">
+                        ${file.name} →
+                        <a href="/${category}/${data.id}">${displayName}</a>
+                    </p>`;
+            }
+        } catch (e) {
+            results.innerHTML += `<p class="error">${file.name}: 上传失败 - ${e.message}</p>`;
+        }
+
+        done++;
+        progressBar.value = (done / total) * 100;
+    }
+
+    title.textContent = '处理完成！';
+    results.innerHTML += `<br><a href="/${category}" role="button">回${category === 'relic' ? '文物' : category === 'animal' ? '动物' : '植物'}相册</a>`;
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+    event.target.classList.remove('active');
+    handleFiles(event.dataTransfer.files);
+}
+</script>
+
+{% endblock %}

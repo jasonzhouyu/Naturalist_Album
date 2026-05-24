@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}{{ artifact.get('name', artifact.get('chinese_name', '详情')) }}{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">首页</a></li>
+        <li><a href="/{{ category }}">{{ label }}</a></li>
+        <li>{{ artifact.get('name', artifact.get('chinese_name', '')) }}</li>
+    </ul>
+</nav>
+
+<div class="detail-layout">
+    <div class="detail-image">
+        <img src="/album/{{ artifact.filename }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
+    </div>
+
+    <div class="detail-info">
+        <h1>{{ artifact.get('name', artifact.get('chinese_name', '未知')) }}</h1>
+
+        {% if category == 'relic' %}
+            {% if artifact.scientific_name %}
+            <p class="subtitle"><em>{{ artifact.scientific_name }}</em></p>
+            {% endif %}
+            {% if artifact.dynasty and artifact.dynasty != '未知' %}
+            <p class="subtitle">{{ artifact.dynasty }}</p>
+            {% endif %}
+        {% else %}
+            {% if artifact.scientific_name and artifact.scientific_name != '未知' %}
+            <p class="subtitle"><em>{{ artifact.scientific_name }}</em></p>
+            {% endif %}
+        {% endif %}
+
+        {% if category == 'relic' %}
+        <!-- 文物信息表 -->
+        <table class="info-table">
+            <tbody>
+                {% if artifact.dynasty and artifact.dynasty != '未知' %}
+                <tr><th>朝代</th><td>{{ artifact.dynasty }}</td></tr>
+                {% endif %}
+                {% if artifact.dynasty_period and artifact.dynasty_period != '未知' %}
+                <tr><th>朝代时间</th><td>{{ artifact.dynasty_period }}</td></tr>
+                {% endif %}
+                {% if artifact.gregorian_years and artifact.gregorian_years != '未知' %}
+                <tr><th>公元纪年</th><td>{{ artifact.gregorian_years }}</td></tr>
+                {% endif %}
+                {% if artifact.material and artifact.material != '未知' %}
+                <tr><th>材质</th><td>{{ artifact.material }}</td></tr>
+                {% endif %}
+                {% if artifact.category and artifact.category != '未知' %}
+                <tr><th>类别</th><td>{{ artifact.category }}</td></tr>
+                {% endif %}
+                {% if artifact.museum and artifact.museum != '未知' %}
+                <tr><th>博物馆</th><td>{{ artifact.museum }}</td></tr>
+                {% endif %}
+                {% if artifact.discovery_place and artifact.discovery_place != '未知' %}
+                <tr><th>发现地址</th><td>{{ artifact.discovery_place }}</td></tr>
+                {% endif %}
+                {% if artifact.confidence %}
+                <tr><th>识别置信度</th><td>{{ artifact.confidence }}</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        {% else %}
+        <!-- 动植物信息表（分类学） -->
+        <table class="info-table">
+            <tbody>
+                {% if artifact.kingdom and artifact.kingdom != '未知' %}
+                <tr><th>界</th><td>{{ artifact.kingdom }}</td></tr>
+                {% endif %}
+                {% if artifact.phylum and artifact.phylum != '未知' %}
+                <tr><th>门</th><td>{{ artifact.phylum }}</td></tr>
+                {% endif %}
+                {% if artifact['class'] and artifact['class'] != '未知' %}
+                <tr><th>纲</th><td>{{ artifact['class'] }}</td></tr>
+                {% endif %}
+                {% if artifact.order and artifact.order != '未知' %}
+                <tr><th>目</th><td>{{ artifact.order }}</td></tr>
+                {% endif %}
+                {% if artifact.family and artifact.family != '未知' %}
+                <tr><th>科</th><td>{{ artifact.family }}</td></tr>
+                {% endif %}
+                {% if artifact.genus and artifact.genus != '未知' %}
+                <tr><th>属</th><td>{{ artifact.genus }}</td></tr>
+                {% endif %}
+                {% if artifact.species and artifact.species != '未知' %}
+                <tr><th>种</th><td>{{ artifact.species }}</td></tr>
+                {% endif %}
+                {% if artifact.distribution and artifact.distribution != '未知' %}
+                <tr><th>分布区域</th><td>{{ artifact.distribution }}</td></tr>
+                {% endif %}
+                {% if artifact.habitat and artifact.habitat != '未知' %}
+                <tr><th>栖息/生长环境</th><td>{{ artifact.habitat }}</td></tr>
+                {% endif %}
+                {% if artifact.confidence %}
+                <tr><th>识别置信度</th><td>{{ artifact.confidence }}</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <!-- TODO: render distribution map with AMAP when distribution_geo is populated -->
+
+        {% endif %}
+
+        <div class="detail-actions">
+            <button onclick="toggleEdit()" class="secondary">编辑信息</button>
+            <button onclick="deleteArtifact('{{ category }}', '{{ artifact.id }}')" class="outline contrast">删除</button>
+        </div>
+    </div>
+
+    {% if artifact.description %}
+    <div class="detail-description">
+        <h2>简介</h2>
+        <p>{{ artifact.description }}</p>
+    </div>
+    {% endif %}
+
+    <!-- 编辑面板 -->
+    <div id="edit-panel" class="detail-edit" style="display:none">
+        <h2>编辑信息</h2>
+        <form id="edit-form" onsubmit="saveEdit(event, '{{ category }}', '{{ artifact.id }}')">
+            {% if category == 'relic' %}
+            <div class="grid">
+                <label>文物名称 <input type="text" name="name" value="{{ artifact.name or '' }}"></label>
+                <label>朝代 <input type="text" name="dynasty" value="{{ artifact.dynasty or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>朝代时间 <input type="text" name="dynasty_period" value="{{ artifact.dynasty_period or '' }}"></label>
+                <label>公元纪年 <input type="text" name="gregorian_years" value="{{ artifact.gregorian_years or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>材质 <input type="text" name="material" value="{{ artifact.material or '' }}"></label>
+                <label>类别 <input type="text" name="category" value="{{ artifact.category or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>博物馆 <input type="text" name="museum" value="{{ artifact.museum or '' }}"></label>
+                <label>发现地址 <input type="text" name="discovery_place" value="{{ artifact.discovery_place or '' }}"></label>
+            </div>
+            {% else %}
+            <div class="grid">
+                <label>中文名 <input type="text" name="chinese_name" value="{{ artifact.chinese_name or '' }}"></label>
+                <label>学名 <input type="text" name="scientific_name" value="{{ artifact.scientific_name or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>界 <input type="text" name="kingdom" value="{{ artifact.kingdom or '' }}"></label>
+                <label>门 <input type="text" name="phylum" value="{{ artifact.phylum or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>纲 <input type="text" name="class" value="{{ artifact['class'] or '' }}"></label>
+                <label>目 <input type="text" name="order" value="{{ artifact.order or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>科 <input type="text" name="family" value="{{ artifact.family or '' }}"></label>
+                <label>属 <input type="text" name="genus" value="{{ artifact.genus or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>种 <input type="text" name="species" value="{{ artifact.species or '' }}"></label>
+                <label>分布区域 <input type="text" name="distribution" value="{{ artifact.distribution or '' }}"></label>
+            </div>
+            <div class="grid">
+                <label>栖息/生长环境 <input type="text" name="habitat" value="{{ artifact.habitat or '' }}"></label>
+            </div>
+            {% endif %}
+            <button type="submit">保存</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleEdit() {
+    const panel = document.getElementById('edit-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function saveEdit(event, category, id) {
+    event.preventDefault();
+    const form = document.getElementById('edit-form');
+    const data = new FormData(form);
+    fetch(`/${category}/${id}/edit`, { method: 'POST', body: data })
+        .then(r => r.json())
+        .then(result => {
+            if (result.ok) { location.reload(); }
+            else { alert('保存失败: ' + result.error); }
+        });
+}
+
+function deleteArtifact(category, id) {
+    if (!confirm('确定要删除这条记录吗？')) return;
+    fetch(`/${category}/${id}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.ok) { window.location.href = '/' + category; }
+            else { alert('删除失败: ' + result.error); }
+        });
+}
+</script>
+
+{% endblock %}
