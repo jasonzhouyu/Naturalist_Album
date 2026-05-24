@@ -471,6 +471,18 @@ button.mini { font-size: 0.7rem; padding: 0.15em 0.4em; min-width: 2em; }
 #process-results .success { color: #155724; }
 #process-results .error { color: #721c24; }
 
+/* ===== 搜索栏 ===== */
+.search-bar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.search-bar input {
+    flex: 1;
+}
+
 /* ===== 分享页面 ===== */
 .share-banner {
     background: #e8f5e9;

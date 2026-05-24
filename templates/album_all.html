@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}全部照片 - 自然观察相册{% endblock %}
+{% block content %}
+
+<h1>全部照片</h1>
+
+<!-- 搜索栏 -->
+<form class="search-bar" onsubmit="event.preventDefault(); search();">
+    <input
+        id="search-input"
+        type="search"
+        placeholder="搜索文物名、朝代、物种、简介..."
+        value="{{ query }}"
+        style="max-width:500px"
+    >
+    <button type="submit">搜索</button>
+    {% if query %}
+    <a href="/album" role="button" class="secondary">清除</a>
+    {% endif %}
+</form>
+
+{% if query %}
+<p style="color:var(--pico-muted-color);margin-bottom:1.5rem">
+    搜索 "{{ query }}" — 找到 {{ total }} 条结果
+</p>
+{% endif %}
+
+{% if artifacts %}
+<div class="album-grid">
+    {% for a in artifacts %}
+    <a href="/{{ a._category }}/{{ a.id }}" class="card-link">
+        <article class="album-card">
+            <img src="/thumbs/{{ a.filename }}" alt="{{ a.get('name', a.get('chinese_name', '')) }}" loading="lazy">
+            <div class="album-info">
+                <h3>{{ a.get('name', a.get('chinese_name', '未知')) }}</h3>
+
+                {% if a._category == 'relic' %}
+                <p>
+                    {% if a.dynasty and a.dynasty != '未知' %}{{ a.dynasty }}{% endif %}
+                    {% if a.material and a.material != '未知' %} · {{ a.material }}{% endif %}
+                    {% if a.museum and a.museum != '未知' %} · {{ a.museum }}{% endif %}
+                </p>
+                {% else %}
+                <p>
+                    {% if a.scientific_name and a.scientific_name != '未知' %}<em>{{ a.scientific_name }}</em>{% endif %}
+                    {% if a.family and a.family != '未知' %} · {{ a.family }}{% endif %}
+                    {% if a.location %} · {{ a.location }}{% endif %}
+                </p>
+                {% endif %}
+
+                <small>
+                    <span class="tag-pill tag-{{ a._category }}">{{ a._label }}</span>
+                    {% if a.confidence %}
+                    <span class="badge {% if a.confidence == '高' %}high{% elif a.confidence == '中' %}medium{% else %}low{% endif %}">{{ a.confidence }}</span>
+                    {% endif %}
+                </small>
+            </div>
+        </article>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    {% if query %}
+    <p>没有找到匹配 "{{ query }}" 的照片</p>
+    <a href="/album" role="button">查看全部</a>
+    {% else %}
+    <p>还没有收录任何照片。</p>
+    <a href="/batch" role="button">批量导入照片</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<script>
+function search() {
+    const q = document.getElementById('search-input').value.trim();
+    window.location.href = '/album?q=' + encodeURIComponent(q);
+}
+
+document.getElementById('search-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        search();
+    }
+});
+</script>
+
+{% endblock %}

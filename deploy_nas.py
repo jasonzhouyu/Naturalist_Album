@@ -12,7 +12,8 @@ LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
 DASHSCOPE_KEY = "sk-a2da2273a94f4f47b76c5c739f2efa1a"
 SUDO = f"echo '{NAS_PASS}' | sudo -S"
 
-EXCLUDE = {"__pycache__", "uploads", "deploy_nas.py", ".git", "migrate.py"}
+EXCLUDE = {"__pycache__", "uploads", "deploy_nas.py", ".git", "migrate.py",
+          "llm_cache.json", "batch_sessions.json", "shares.json", ".env"}
 
 
 def create_tarball():

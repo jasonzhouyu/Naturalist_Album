@@ -64,6 +64,39 @@ async def index(request: Request):
     })
 
 
+# === 统一相册（跨品类搜索） ===
+
+@app.get("/album", response_class=HTMLResponse)
+async def album_all(request: Request, q: str = ""):
+    all_artifacts = []
+    for c in CATEGORIES:
+        data = load_metadata(c)
+        for a in data["artifacts"]:
+            a["_category"] = c
+            a["_label"] = CATEGORY_LABELS[c]
+            all_artifacts.append(a)
+
+    # 模糊搜索：匹配所有字符串字段
+    if q.strip():
+        keyword = q.strip().lower()
+        filtered = []
+        for a in all_artifacts:
+            # 将所有字段值拼成一个字符串用于搜索
+            search_text = " ".join(
+                str(v).lower() for v in a.values()
+                if isinstance(v, str)
+            )
+            if keyword in search_text:
+                filtered.append(a)
+        all_artifacts = filtered
+
+    return templates.TemplateResponse(request, "album_all.html", {
+        "artifacts": all_artifacts,
+        "query": q,
+        "total": len(all_artifacts),
+    })
+
+
 # === 上传页（必须在 /{category} 之前注册，否则被通配路由拦截）===
 
 @app.get("/upload/{category}", response_class=HTMLResponse)
