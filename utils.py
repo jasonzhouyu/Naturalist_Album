@@ -46,10 +46,12 @@ def get_metadata_file(category: str) -> Path:
 
 def load_metadata(category: str) -> dict:
     f = get_metadata_file(category)
-    if f.exists():
+    if f.exists() and f.stat().st_size > 0:
         with open(f, "r", encoding="utf-8") as fp:
             return json.load(fp)
-    return {"artifacts": [], "category": category}
+    data = {"artifacts": [], "category": category}
+    save_metadata(category, data)
+    return data
 
 
 def save_metadata(category: str, data: dict):
