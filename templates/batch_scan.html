@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}批量导入 - 自然观察相册{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">首页</a></li>
+        <li>批量导入</li>
+    </ul>
+</nav>
+
+<h1>批量导入</h1>
+
+<p>输入本地照片目录的完整路径，系统会扫描目录中的所有图片文件供你预览和标记分类。</p>
+
+<div class="batch-scan-form">
+    <label for="dir-path">
+        <strong>目录路径</strong>
+        <input
+            id="dir-path"
+            type="text"
+            placeholder="例如: C:\Users\jason\Pictures\2024-05-25"
+            style="font-family: monospace"
+        >
+    </label>
+    <div id="scan-error" class="error-message" style="display:none"></div>
+    <button onclick="doScan()" id="scan-btn">扫描目录</button>
+</div>
+
+<script>
+async function doScan() {
+    const input = document.getElementById('dir-path');
+    const btn = document.getElementById('scan-btn');
+    const errDiv = document.getElementById('scan-error');
+    const directory = input.value.trim();
+
+    if (!directory) {
+        errDiv.textContent = '请输入目录路径';
+        errDiv.style.display = 'block';
+        return;
+    }
+
+    errDiv.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '扫描中...';
+
+    try {
+        const resp = await fetch('/batch/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({directory: directory})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            errDiv.textContent = data.error;
+            errDiv.style.display = 'block';
+        } else {
+            window.location.href = '/batch/' + data.session_id;
+        }
+    } catch (e) {
+        errDiv.textContent = '请求失败: ' + e.message;
+        errDiv.style.display = 'block';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '扫描目录';
+}
+
+document.getElementById('dir-path').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doScan();
+});
+</script>
+
+{% endblock %}

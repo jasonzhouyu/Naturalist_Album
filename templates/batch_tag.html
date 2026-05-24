@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}标记分类 - 自然观察相册{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">首页</a></li>
+        <li><a href="/batch">批量导入</a></li>
+        <li>标记分类</li>
+    </ul>
+</nav>
+
+<h1>标记分类 <small style="font-size:0.6em;color:var(--pico-muted-color)">{{ session.files|length }} 张照片</small></h1>
+<p style="color:var(--pico-muted-color);margin-bottom:1rem;font-size:0.85em">
+    目录: {{ session.directory }}
+</p>
+
+<!-- 工具栏 -->
+<div class="batch-toolbar">
+    <div class="toolbar-row">
+        <label style="margin:0;display:flex;align-items:center;gap:0.5rem">
+            <span style="white-space:nowrap">拍摄地址:</span>
+            <input id="location-input" type="text" value="{{ session.default_location }}" placeholder="输入拍摄地址" style="max-width:250px">
+        </label>
+        <button onclick="applyLocation()" class="secondary" style="white-space:nowrap">应用到全部</button>
+    </div>
+
+    <div class="toolbar-row">
+        <span class="toolbar-label">快速标记:</span>
+        <div class="toolbar-actions">
+            <button onclick="selectAll()" class="outline small">全选</button>
+            <button onclick="deselectAll()" class="outline small">全不选</button>
+            <span class="toolbar-sep">|</span>
+            <button onclick="tagSelected('relic')" class="small tag-btn-relic">标记文物</button>
+            <button onclick="tagSelected('animal')" class="small tag-btn-animal">标记动物</button>
+            <button onclick="tagSelected('plant')" class="small tag-btn-plant">标记植物</button>
+            <button onclick="tagSelected(null)" class="outline small">跳过所选</button>
+        </div>
+    </div>
+
+    <div class="toolbar-row" style="justify-content:space-between">
+        <span id="tag-counter" class="tag-counter">已标记 0 / {{ session.files|length }}</span>
+        <button id="process-btn" onclick="startProcess()" class="process-btn">处理全部</button>
+    </div>
+</div>
+
+<!-- 照片网格 -->
+<div class="batch-grid" id="batch-grid">
+    {% for f in session.files %}
+    <div class="batch-card" id="card-{{ f.index }}" data-index="{{ f.index }}">
+        <div class="batch-card-img">
+            <img src="/batch-preview/{{ session.id }}/{{ f.index }}" alt="{{ f.name }}" loading="lazy">
+        </div>
+        <div class="batch-card-body">
+            <div class="batch-card-name" title="{{ f.name }}">{{ f.name }}</div>
+            <div class="batch-card-tags">
+                <span id="tag-{{ f.index }}" class="tag-pill tag-{{ f.category or 'none' }}">
+                    {% if f.category == 'relic' %}文物
+                    {% elif f.category == 'animal' %}动物
+                    {% elif f.category == 'plant' %}植物
+                    {% else %}未标记
+                    {% endif %}
+                </span>
+                {% if f.location %}
+                <span class="tag-location" title="{{ f.location }}">{{ f.location }}</span>
+                {% endif %}
+            </div>
+            <div class="batch-card-actions">
+                <button onclick="tagOne({{ f.index }}, 'relic')" class="mini tag-btn-relic" title="文物">文</button>
+                <button onclick="tagOne({{ f.index }}, 'animal')" class="mini tag-btn-animal" title="动物">动</button>
+                <button onclick="tagOne({{ f.index }}, 'plant')" class="mini tag-btn-plant" title="植物">植</button>
+                <button onclick="tagOne({{ f.index }}, null)" class="mini outline" title="跳过">跳</button>
+            </div>
+            <label class="batch-card-check">
+                <input type="checkbox" class="card-checkbox" data-index="{{ f.index }}" onchange="updateCounter()">
+            </label>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 处理进度遮罩 -->
+<div id="process-overlay" class="process-overlay" style="display:none">
+    <div class="process-panel">
+        <h2 id="process-title">处理中...</h2>
+        <progress id="process-bar" value="0" max="100"></progress>
+        <div id="process-results"></div>
+        <button id="process-close" onclick="closeProcess()" style="display:none">关闭</button>
+    </div>
+</div>
+
+<script>
+const SESSION_ID = '{{ session.id }}';
+const fileCount = {{ session.files|length }};
+
+let files = {{ session.files | tojson | safe }};
+
+function updateCounter() {
+    const checked = document.querySelectorAll('.card-checkbox:checked').length;
+    const tagged = files.filter(f => f.category).length;
+    document.getElementById('tag-counter').textContent =
+        `已标记 ${tagged} / ${fileCount} | 已选 ${checked}`;
+}
+
+function selectAll() {
+    document.querySelectorAll('.card-checkbox').forEach(cb => { cb.checked = true; });
+    updateCounter();
+}
+
+function deselectAll() {
+    document.querySelectorAll('.card-checkbox').forEach(cb => { cb.checked = false; });
+    updateCounter();
+}
+
+function getSelectedIndices() {
+    return Array.from(document.querySelectorAll('.card-checkbox:checked'))
+        .map(cb => parseInt(cb.dataset.index));
+}
+
+async function tagOne(index, category) {
+    await doTag([index], category);
+}
+
+async function tagSelected(category) {
+    const indices = getSelectedIndices();
+    if (indices.length === 0) {
+        alert('请先勾选照片');
+        return;
+    }
+    await doTag(indices, category);
+}
+
+async function doTag(indices, category) {
+    try {
+        const resp = await fetch(`/batch/${SESSION_ID}/tag`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({indices: indices, category: category})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            files = data.files;
+            refreshCards();
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+
+function refreshCards() {
+    files.forEach(f => {
+        const tagEl = document.getElementById(`tag-${f.index}`);
+        if (tagEl) {
+            tagEl.className = 'tag-pill tag-' + (f.category || 'none');
+            const labels = {relic: '文物', animal: '动物', plant: '植物', null: '未标记'};
+            tagEl.textContent = labels[f.category] || '未标记';
+        }
+    });
+    updateCounter();
+}
+
+async function applyLocation() {
+    const loc = document.getElementById('location-input').value.trim();
+    if (!loc) return;
+    try {
+        const resp = await fetch(`/batch/${SESSION_ID}/location`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({location: loc, indices: null})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            files = data.files;
+            refreshCards();
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+
+async function startProcess() {
+    const tagged = files.filter(f => f.category);
+    if (tagged.length === 0) {
+        alert('请先标记至少一张照片');
+        return;
+    }
+    if (!confirm(`将处理 ${tagged.length} 张标记照片，是否继续？`)) return;
+
+    document.getElementById('process-overlay').style.display = 'flex';
+    document.getElementById('process-results').innerHTML = '';
+    const bar = document.getElementById('process-bar');
+    const title = document.getElementById('process-title');
+
+    try {
+        const resp = await fetch(`/batch/${SESSION_ID}/process`, {method: 'POST'});
+        const data = await resp.json();
+
+        const resultsDiv = document.getElementById('process-results');
+        let successCount = 0;
+        let failCount = 0;
+
+        data.results.forEach(r => {
+            if (r.ok) {
+                successCount++;
+                const name = r.artifact.name || r.artifact.chinese_name || '未知';
+                resultsDiv.innerHTML += `<p class="success">
+                    ${r.file} → <a href="/${r.artifact.category}/${r.artifact.id}">${name}</a>
+                </p>`;
+            } else {
+                failCount++;
+                resultsDiv.innerHTML += `<p class="error">${r.file}: ${r.error}</p>`;
+            }
+        });
+
+        bar.value = 100;
+        title.textContent = `处理完成: ${successCount} 成功, ${failCount} 失败`;
+
+        // Add links to category albums
+        const categories = [...new Set(data.results.filter(r => r.ok).map(r => r.artifact.category))];
+        resultsDiv.innerHTML += '<div style="margin-top:1rem">';
+        categories.forEach(c => {
+            const labels = {relic: '文物相册', animal: '动物相册', plant: '植物相册'};
+            resultsDiv.innerHTML += `<a href="/${c}" role="button" class="secondary" style="margin:0.25rem">${labels[c]}</a> `;
+        });
+        resultsDiv.innerHTML += '</div>';
+    } catch (e) {
+        title.textContent = '处理失败';
+        document.getElementById('process-results').innerHTML = `<p class="error">${e.message}</p>`;
+    }
+
+    bar.value = 100;
+    document.getElementById('process-close').style.display = 'inline-block';
+}
+
+function closeProcess() {
+    document.getElementById('process-overlay').style.display = 'none';
+}
+
+updateCounter();
+</script>
+
+{% endblock %}

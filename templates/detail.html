@@ -105,8 +105,10 @@
 
         <div class="detail-actions">
             <button onclick="toggleEdit()" class="secondary">编辑信息</button>
+            <button onclick="createShare('{{ category }}', '{{ artifact.id }}')" class="secondary">生成分享链接</button>
             <button onclick="deleteArtifact('{{ category }}', '{{ artifact.id }}')" class="outline contrast">删除</button>
         </div>
+        <div id="share-result" style="margin-top:0.5rem"></div>
     </div>
 
     {% if artifact.description %}
@@ -171,6 +173,20 @@
 function toggleEdit() {
     const panel = document.getElementById('edit-panel');
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+async function createShare(category, id) {
+    const resultDiv = document.getElementById('share-result');
+    try {
+        const resp = await fetch(`/api/share/${category}/${id}`, {method: 'POST'});
+        const data = await resp.json();
+        if (data.url) {
+            const fullUrl = window.location.origin + data.url;
+            resultDiv.innerHTML = `<input type="text" value="${fullUrl}" readonly onclick="this.select()" style="width:100%">`;
+        }
+    } catch (e) {
+        resultDiv.innerHTML = `<span class="error">创建失败: ${e.message}</span>`;
+    }
 }
 
 function saveEdit(event, category, id) {

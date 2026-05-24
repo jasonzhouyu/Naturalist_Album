@@ -11,3 +11,7 @@ thumbs/**/*
 *.arw
 *.dng
 migrate.py
+llm_cache.json
+batch_sessions.json
+shares.json
+.env

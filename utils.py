@@ -98,15 +98,19 @@ def update_artifact(category: str, artifact_id: str, updates: dict) -> dict | No
     return None
 
 
-def generate_filename(category: str, info: dict, ext: str) -> str:
+def generate_filename(category: str, info: dict, ext: str, location: str = "") -> str:
     if category == "relic":
         name = info.get("name", "未知文物")
         dynasty = info.get("dynasty", "")
         base = f"{name}_{dynasty}" if dynasty and dynasty != "未知" else name
     else:
-        name = info.get("chinese_name", f"未知{category}")
+        order = info.get("order", "")
+        genus = info.get("genus", "")
         species = info.get("species", "")
-        base = f"{name}_{species}" if species and species != "未知" else name
+        parts = [p for p in [order, genus, species] if p and p != "未知"]
+        base = "-".join(parts) if parts else info.get("chinese_name", f"未知{category}")
+        if location:
+            base = f"{base}_{location}"
 
     base = sanitize_filename(base)
     album_dir = get_album_dir(category)

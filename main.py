@@ -19,6 +19,8 @@ from utils import (
     ALLOWED_EXTENSIONS, CATEGORIES,
 )
 from processor import process_photo
+from session_manager import create_session, get_session, tag_files, set_location
+from share_manager import create_share, get_share, delete_share
 
 app = FastAPI(title="自然观察相册")
 
@@ -62,38 +64,7 @@ async def index(request: Request):
     })
 
 
-# === 品类相册 ===
-
-@app.get("/{category}", response_class=HTMLResponse)
-async def album_view(request: Request, category: str):
-    if not validate_category(category):
-        return HTMLResponse("不存在的品类", status_code=404)
-    data = load_metadata(category)
-    return templates.TemplateResponse(request, "album.html", {
-        "category": category,
-        "label": CATEGORY_LABELS[category],
-        "artifacts": data["artifacts"],
-    })
-
-
-# === 详情页 ===
-
-@app.get("/{category}/{artifact_id}", response_class=HTMLResponse)
-async def detail(request: Request, category: str, artifact_id: str):
-    if not validate_category(category):
-        return HTMLResponse("不存在的品类", status_code=404)
-    data = load_metadata(category)
-    artifact = next((a for a in data["artifacts"] if a["id"] == artifact_id), None)
-    if not artifact:
-        return HTMLResponse("记录不存在", status_code=404)
-    return templates.TemplateResponse(request, "detail.html", {
-        "category": category,
-        "label": CATEGORY_LABELS[category],
-        "artifact": artifact,
-    })
-
-
-# === 上传页 ===
+# === 上传页（必须在 /{category} 之前注册，否则被通配路由拦截）===
 
 @app.get("/upload/{category}", response_class=HTMLResponse)
 async def upload_page(request: Request, category: str):
@@ -129,6 +100,174 @@ async def upload_photo(category: str, file: UploadFile = File(...)):
 
     return JSONResponse(result)
 
+
+# === 批量导入 ===
+
+@app.get("/batch", response_class=HTMLResponse)
+async def batch_scan_page(request: Request):
+    return templates.TemplateResponse(request, "batch_scan.html", {})
+
+
+@app.post("/batch/scan")
+async def batch_scan(request: Request):
+    body = await request.json()
+    directory = body.get("directory", "").strip()
+    if not directory:
+        return JSONResponse({"error": "请输入目录路径"}, status_code=400)
+    try:
+        session = create_session(directory)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"session_id": session["id"], "file_count": len(session["files"])})
+
+
+@app.get("/batch/{session_id}", response_class=HTMLResponse)
+async def batch_tag_page(request: Request, session_id: str):
+    session = get_session(session_id)
+    if not session:
+        return HTMLResponse("会话不存在或已过期", status_code=404)
+    return templates.TemplateResponse(request, "batch_tag.html", {
+        "session": session,
+    })
+
+
+@app.get("/batch-preview/{session_id}/{index}")
+async def serve_batch_preview(session_id: str, index: int):
+    from fastapi.responses import FileResponse
+    session = get_session(session_id)
+    if not session:
+        return HTMLResponse("Session not found", status_code=404)
+    try:
+        file_info = session["files"][int(index)]
+    except (IndexError, ValueError):
+        return HTMLResponse("File not found", status_code=404)
+    return FileResponse(file_info["path"])
+
+
+@app.post("/batch/{session_id}/tag")
+async def batch_tag(session_id: str, request: Request):
+    body = await request.json()
+    indices = body.get("indices", [])
+    category = body.get("category")
+    if category is not None and category not in CATEGORIES:
+        return JSONResponse({"error": "Invalid category"}, status_code=400)
+    try:
+        session = tag_files(session_id, indices, category)
+    except KeyError:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    return JSONResponse({"ok": True, "files": session["files"]})
+
+
+@app.post("/batch/{session_id}/location")
+async def batch_location(session_id: str, request: Request):
+    body = await request.json()
+    location = body.get("location", "").strip()
+    indices = body.get("indices")
+    try:
+        session = set_location(session_id, location, indices)
+    except KeyError:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    return JSONResponse({"ok": True, "files": session["files"]})
+
+
+@app.post("/batch/{session_id}/process")
+async def batch_process(session_id: str):
+    session = get_session(session_id)
+    if not session:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+
+    to_process = [(f, f["category"]) for f in session["files"]
+                  if f["category"] in CATEGORIES]
+
+    if not to_process:
+        return JSONResponse({"error": "没有标记任何照片"}, status_code=400)
+
+    results = []
+    for file_info, category in to_process:
+        location = file_info.get("location") or session.get("default_location", "")
+        try:
+            artifact = process_photo(file_info["path"], category, location=location)
+            results.append({"file": file_info["name"], "ok": True, "artifact": artifact})
+        except Exception as e:
+            results.append({"file": file_info["name"], "ok": False, "error": str(e)})
+
+    return JSONResponse({"results": results, "total": len(to_process)})
+
+
+# === 分享链接 ===
+
+@app.get("/share/{share_id}", response_class=HTMLResponse)
+async def share_view(request: Request, share_id: str):
+    share = get_share(share_id)
+    if not share:
+        return HTMLResponse("链接不存在或已过期", status_code=404)
+    data = load_metadata(share["category"])
+    artifact = next((a for a in data["artifacts"] if a["id"] == share["artifact_id"]), None)
+    if not artifact:
+        return HTMLResponse("记录已被删除", status_code=404)
+    return templates.TemplateResponse(request, "share_view.html", {
+        "category": share["category"],
+        "label": CATEGORY_LABELS[share["category"]],
+        "artifact": artifact,
+        "share_id": share_id,
+    })
+
+
+@app.post("/api/share/{category}/{artifact_id}")
+async def create_share_link(category: str, artifact_id: str):
+    if not validate_category(category):
+        return JSONResponse({"error": "不存在的品类"}, status_code=404)
+    share = create_share(artifact_id, category)
+    return JSONResponse({"share_id": share["id"], "url": f"/share/{share['id']}"})
+
+
+@app.delete("/api/share/{share_id}")
+async def revoke_share_link(share_id: str):
+    ok = delete_share(share_id)
+    if not ok:
+        return JSONResponse({"error": "Share not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+# === 品类相册 ===
+
+@app.get("/{category}", response_class=HTMLResponse)
+async def album_view(request: Request, category: str):
+    if not validate_category(category):
+        return HTMLResponse("不存在的品类", status_code=404)
+    data = load_metadata(category)
+    return templates.TemplateResponse(request, "album.html", {
+        "category": category,
+        "label": CATEGORY_LABELS[category],
+        "artifacts": data["artifacts"],
+    })
+
+
+# === JSON API（必须在 /{category}/{artifact_id} 之前注册）===
+
+@app.get("/api/{category}")
+async def api_artifacts(category: str):
+    if not validate_category(category):
+        return JSONResponse({"error": "不存在的品类"}, status_code=404)
+    data = load_metadata(category)
+    return JSONResponse(data["artifacts"])
+
+
+# === 详情页 ===
+
+@app.get("/{category}/{artifact_id}", response_class=HTMLResponse)
+async def detail(request: Request, category: str, artifact_id: str):
+    if not validate_category(category):
+        return HTMLResponse("不存在的品类", status_code=404)
+    data = load_metadata(category)
+    artifact = next((a for a in data["artifacts"] if a["id"] == artifact_id), None)
+    if not artifact:
+        return HTMLResponse("记录不存在", status_code=404)
+    return templates.TemplateResponse(request, "detail.html", {
+        "category": category,
+        "label": CATEGORY_LABELS[category],
+        "artifact": artifact,
+    })
 
 # === 删除 ===
 
@@ -171,16 +310,6 @@ async def edit_artifact(category: str, artifact_id: str, request: Request):
             pass
 
     return JSONResponse({"ok": True, "artifact": artifact})
-
-
-# === JSON API ===
-
-@app.get("/api/{category}")
-async def api_artifacts(category: str):
-    if not validate_category(category):
-        return JSONResponse({"error": "不存在的品类"}, status_code=404)
-    data = load_metadata(category)
-    return JSONResponse(data["artifacts"])
 
 
 if __name__ == "__main__":
