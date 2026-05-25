@@ -12,10 +12,36 @@ services:
       - "8000:8000"
     environment:
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - PLANTNET_API_KEY=${PLANTNET_API_KEY:-}
+      - INAT_JWT_FILE=/keys/inat_jwt.txt
     volumes:
       - ./album:/app/album
       - ./thumbs:/app/thumbs
       - ./metadata_relic.json:/app/metadata_relic.json
       - ./metadata_animal.json:/app/metadata_animal.json
       - ./metadata_plant.json:/app/metadata_plant.json
+      - ./keys:/keys:ro
+    restart: unless-stopped
+
+  inat-jwt-refresher:
+    image: mcr.microsoft.com/playwright/python:v1.59.0-noble
+    container_name: inat-jwt-refresher
+    network_mode: host           # 走 NAS 主网，享受透明代理（容器 NAT 后会绕过路由器代理）
+    env_file:
+      - ./keys/inat_creds.env    # 一行 INATURALIST_USERNAME=, 一行 INATURALIST_PASSWORD=
+    environment:
+      - JWT_OUTPUT_FILE=/keys/inat_jwt.txt
+      - STATE_PATH=/keys/.inat_state/state.json
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./keys:/keys
+    command: >
+      sh -c '
+        echo "[inat-refresher] starting daily loop";
+        while true; do
+          echo "[$(date -Iseconds)] refreshing iNat JWT";
+          python /scripts/refresh_inat_jwt.py || echo "[err] refresh failed";
+          sleep 86400;
+        done
+      '
     restart: unless-stopped

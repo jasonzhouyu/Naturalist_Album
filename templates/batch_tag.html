@@ -2,24 +2,21 @@
 {% block title %}标记分类 - 自然观察相册{% endblock %}
 {% block content %}
 
-<nav aria-label="breadcrumb">
-    <ul>
-        <li><a href="/">首页</a></li>
-        <li><a href="/batch">批量导入</a></li>
-        <li>标记分类</li>
-    </ul>
-</nav>
+<ul class="breadcrumb">
+    <li><a href="/">首页</a></li>
+    <li><a href="/batch">批量导入</a></li>
+    <li>标记分类</li>
+</ul>
 
-<h1>标记分类 <small style="font-size:0.6em;color:var(--pico-muted-color)">{{ session.files|length }} 张照片</small></h1>
-<p style="color:var(--pico-muted-color);margin-bottom:1rem;font-size:0.85em">
+<h1>标记分类 <small style="font-size:0.55em;color:var(--text-muted)">{{ session.files|length }} 张照片</small></h1>
+<p style="color:var(--text-muted);margin-bottom:1rem;font-size:0.85em">
     目录: {{ session.directory }}
 </p>
 
-<!-- 工具栏 -->
 <div class="batch-toolbar">
     <div class="toolbar-row">
         <label style="margin:0;display:flex;align-items:center;gap:0.5rem">
-            <span style="white-space:nowrap">拍摄地址:</span>
+            <span style="white-space:nowrap;font-weight:500;color:var(--text)">拍摄地址:</span>
             <input id="location-input" type="text" value="{{ session.default_location }}" placeholder="输入拍摄地址" style="max-width:250px">
         </label>
         <button onclick="applyLocation(null)" class="secondary" style="white-space:nowrap">应用到全部</button>
@@ -42,8 +39,8 @@
     <div class="toolbar-row" style="justify-content:space-between">
         <span style="display:flex;align-items:center;gap:0.75rem">
             <span id="tag-counter" class="tag-counter">已标记 0 / {{ session.files|length }}</span>
-            <label style="margin:0;font-size:0.85rem;display:flex;align-items:center;gap:0.3rem">
-                <input type="checkbox" id="index-only-check">
+            <label style="margin:0;font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;color:var(--text)">
+                <input type="checkbox" id="index-only-check" checked>
                 仅索引（不复制文件）
             </label>
         </span>
@@ -51,41 +48,12 @@
     </div>
 </div>
 
-<!-- 照片网格 -->
-<div class="batch-grid" id="batch-grid">
-    {% for f in session.files %}
-    <div class="batch-card" id="card-{{ f.index }}" data-index="{{ f.index }}">
-        <div class="batch-card-img">
-            <img src="/batch-preview/{{ session.id }}/{{ f.index }}" alt="{{ f.name }}" loading="lazy">
-        </div>
-        <div class="batch-card-body">
-            <div class="batch-card-name" title="{{ f.name }}">{{ f.name }}</div>
-            <div class="batch-card-tags">
-                <span id="tag-{{ f.index }}" class="tag-pill tag-{{ f.category or 'none' }}">
-                    {% if f.category == 'relic' %}文物
-                    {% elif f.category == 'animal' %}动物
-                    {% elif f.category == 'plant' %}植物
-                    {% else %}未标记
-                    {% endif %}
-                </span>
-                <span id="loc-{{ f.index }}" class="tag-location" title="{{ f.location or '' }}" style="{% if not f.location %}display:none{% endif %}">{{ f.location or '' }}</span>
-            </div>
-            <input id="loc-input-{{ f.index }}" type="text" class="card-loc-input" value="{{ f.location or '' }}" placeholder="地点" onchange="setOneLocation({{ f.index }}, this.value)">
-            <div class="batch-card-actions">
-                <button onclick="tagOne({{ f.index }}, 'relic')" class="mini tag-btn-relic" title="文物">文</button>
-                <button onclick="tagOne({{ f.index }}, 'animal')" class="mini tag-btn-animal" title="动物">动</button>
-                <button onclick="tagOne({{ f.index }}, 'plant')" class="mini tag-btn-plant" title="植物">植</button>
-                <button onclick="tagOne({{ f.index }}, null)" class="mini outline" title="跳过">跳</button>
-            </div>
-            <label class="batch-card-check">
-                <input type="checkbox" class="card-checkbox" data-index="{{ f.index }}" onchange="updateCounter()">
-            </label>
-        </div>
-    </div>
-    {% endfor %}
+<div class="batch-grid" id="batch-grid"></div>
+<div id="batch-load-more" style="text-align:center;padding:1.5rem;display:none">
+    <button onclick="loadMore()" class="secondary">加载更多 (<span id="remaining-count">0</span>)</button>
 </div>
+<div id="batch-load-sentinel" style="height:1px"></div>
 
-<!-- 处理进度遮罩 -->
 <div id="process-overlay" class="process-overlay" style="display:none">
     <div class="process-panel">
         <h2 id="process-title">处理中...</h2>
@@ -98,29 +66,109 @@
 <script>
 const SESSION_ID = '{{ session.id }}';
 const fileCount = {{ session.files|length }};
+const PAGE_SIZE = 200;
 
 let files = {{ session.files | tojson | safe }};
+let renderedCount = 0;
+let loadingMore = false;
+
+const CATEGORY_LABELS = {relic: '文物', animal: '动物', plant: '植物'};
+
+function escapeHTML(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const selected = new Set();
+
+function cardHTML(f) {
+    const catClass = f.category || 'none';
+    const catLabel = CATEGORY_LABELS[f.category] || '未标记';
+    const loc = f.location || '';
+    const locHidden = loc ? '' : 'display:none';
+    const safeName = escapeHTML(f.name);
+    const safeLoc = escapeHTML(loc);
+    const checked = selected.has(f.index) ? 'checked' : '';
+    return `
+        <div class="batch-card" id="card-${f.index}" data-index="${f.index}">
+            <div class="batch-card-img">
+                <img src="/batch-preview/${SESSION_ID}/${f.index}" alt="${safeName}" loading="lazy" decoding="async">
+            </div>
+            <div class="batch-card-body">
+                <div class="batch-card-name" title="${safeName}">${safeName}</div>
+                <div class="batch-card-tags">
+                    <span id="tag-${f.index}" class="tag-pill tag-${catClass}">${catLabel}</span>
+                    <span id="loc-${f.index}" class="tag-location" title="${safeLoc}" style="${locHidden}">${safeLoc}</span>
+                </div>
+                <input id="loc-input-${f.index}" type="text" class="card-loc-input" value="${safeLoc}" placeholder="地点" onchange="setOneLocation(${f.index}, this.value)">
+                <div class="batch-card-actions">
+                    <button onclick="tagOne(${f.index}, 'relic')" class="mini tag-btn-relic" title="文物">文</button>
+                    <button onclick="tagOne(${f.index}, 'animal')" class="mini tag-btn-animal" title="动物">动</button>
+                    <button onclick="tagOne(${f.index}, 'plant')" class="mini tag-btn-plant" title="植物">植</button>
+                    <button onclick="tagOne(${f.index}, null)" class="mini outline" title="跳过">跳</button>
+                </div>
+                <label class="batch-card-check">
+                    <input type="checkbox" class="card-checkbox" data-index="${f.index}" ${checked} onchange="onCheckboxChange(${f.index}, this.checked)">
+                </label>
+            </div>
+        </div>`;
+}
+
+function onCheckboxChange(index, isChecked) {
+    if (isChecked) selected.add(index); else selected.delete(index);
+    updateCounter();
+}
+
+function appendCards(slice) {
+    const grid = document.getElementById('batch-grid');
+    const html = slice.map(cardHTML).join('');
+    grid.insertAdjacentHTML('beforeend', html);
+    renderedCount += slice.length;
+    updateLoadMoreVisibility();
+}
+
+function updateLoadMoreVisibility() {
+    const remaining = files.length - renderedCount;
+    const wrap = document.getElementById('batch-load-more');
+    if (remaining > 0) {
+        wrap.style.display = '';
+        document.getElementById('remaining-count').textContent = remaining;
+    } else {
+        wrap.style.display = 'none';
+    }
+}
+
+function loadMore() {
+    if (loadingMore) return;
+    loadingMore = true;
+    try {
+        const next = files.slice(renderedCount, renderedCount + PAGE_SIZE);
+        if (next.length) appendCards(next);
+    } finally {
+        loadingMore = false;
+    }
+}
 
 function updateCounter() {
-    const checked = document.querySelectorAll('.card-checkbox:checked').length;
     const tagged = files.filter(f => f.category).length;
     document.getElementById('tag-counter').textContent =
-        `已标记 ${tagged} / ${fileCount} | 已选 ${checked}`;
+        `已标记 ${tagged} / ${fileCount} | 已选 ${selected.size}`;
 }
 
 function selectAll() {
+    files.forEach(f => selected.add(f.index));
     document.querySelectorAll('.card-checkbox').forEach(cb => { cb.checked = true; });
     updateCounter();
 }
 
 function deselectAll() {
+    selected.clear();
     document.querySelectorAll('.card-checkbox').forEach(cb => { cb.checked = false; });
     updateCounter();
 }
 
 function getSelectedIndices() {
-    return Array.from(document.querySelectorAll('.card-checkbox:checked'))
-        .map(cb => parseInt(cb.dataset.index));
+    return Array.from(selected);
 }
 
 async function tagOne(index, category) {
@@ -161,7 +209,6 @@ function refreshCards() {
             const labels = {relic: '文物', animal: '动物', plant: '植物', null: '未标记'};
             tagEl.textContent = labels[f.category] || '未标记';
         }
-        // Refresh location display
         const locEl = document.getElementById(`loc-${f.index}`);
         if (locEl) {
             if (f.location) {
@@ -259,12 +306,11 @@ async function startProcess() {
         bar.value = 100;
         title.textContent = `处理完成: ${successCount} 成功, ${failCount} 失败`;
 
-        // Add links to category albums
         const categories = [...new Set(data.results.filter(r => r.ok).map(r => r.artifact.category))];
         resultsDiv.innerHTML += '<div style="margin-top:1rem">';
         categories.forEach(c => {
             const labels = {relic: '文物相册', animal: '动物相册', plant: '植物相册'};
-            resultsDiv.innerHTML += `<a href="/${c}" role="button" class="secondary" style="margin:0.25rem">${labels[c]}</a> `;
+            resultsDiv.innerHTML += `<a href="/${c}" class="btn secondary" style="margin:0.25rem">${labels[c]}</a> `;
         });
         resultsDiv.innerHTML += '</div>';
     } catch (e) {
@@ -280,7 +326,19 @@ function closeProcess() {
     document.getElementById('process-overlay').style.display = 'none';
 }
 
+// 初始渲染：先吐 PAGE_SIZE 张，超出部分滚动到底自动追加
+appendCards(files.slice(0, PAGE_SIZE));
 updateCounter();
+
+if ('IntersectionObserver' in window) {
+    const sentinel = document.getElementById('batch-load-sentinel');
+    const io = new IntersectionObserver(entries => {
+        for (const e of entries) {
+            if (e.isIntersecting) loadMore();
+        }
+    }, {rootMargin: '600px 0px'});
+    io.observe(sentinel);
+}
 </script>
 
 {% endblock %}

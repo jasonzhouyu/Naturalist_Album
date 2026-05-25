@@ -4,20 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}自然观察相册{% endblock %}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <nav class="container-fluid">
-        <ul>
-            <li><a href="/" class="contrast"><strong>自然观察相册</strong></a></li>
-        </ul>
-        <ul>
-            <li><a href="/album">全部</a></li>
-            <li><a href="/relic">文物</a></li>
-            <li><a href="/animal">动物</a></li>
-            <li><a href="/plant">植物</a></li>
-            <li><a href="/settings" class="secondary" style="font-size:0.85em">设置</a></li>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">自然观察相册</a>
+        <ul class="navbar-links">
+            <li><a href="/album" {% if request.url.path == '/album' %}class="active"{% endif %}>全部</a></li>
+            <li><a href="/relic" {% if '/relic' in request.url.path %}class="active"{% endif %}>文物</a></li>
+            <li><a href="/animal" {% if '/animal' in request.url.path %}class="active"{% endif %}>动物</a></li>
+            <li><a href="/plant" {% if '/plant' in request.url.path %}class="active"{% endif %}>植物</a></li>
+            <li><a href="/batch" {% if '/batch' in request.url.path %}class="active"{% endif %}>导入</a></li>
+            <li><a href="/settings" {% if '/settings' in request.url.path %}class="active"{% endif %}>设置</a></li>
         </ul>
     </nav>
 

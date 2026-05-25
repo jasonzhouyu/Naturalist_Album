@@ -4,69 +4,105 @@
 
 <h1>全部照片</h1>
 
-<!-- 搜索栏 -->
 <form class="search-bar" onsubmit="event.preventDefault(); search();">
     <input
         id="search-input"
         type="search"
         placeholder="搜索文物名、朝代、物种、简介..."
         value="{{ query }}"
-        style="max-width:500px"
     >
     <button type="submit">搜索</button>
     {% if query %}
-    <a href="/album" role="button" class="secondary">清除</a>
+    <button type="button" class="secondary" onclick="window.location.href='/album'">清除</button>
     {% endif %}
 </form>
 
 {% if query %}
-<p style="color:var(--pico-muted-color);margin-bottom:1.5rem">
+<p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:0.88rem">
     搜索 "{{ query }}" — 找到 {{ total }} 条结果
 </p>
 {% endif %}
 
 {% if artifacts %}
-<div class="album-grid">
-    {% for a in artifacts %}
-    <a href="/{{ a._category }}/{{ a.id }}" class="card-link">
-        <article class="album-card">
-            <img src="/thumbs/{{ a.filename }}" alt="{{ a.get('name', a.get('chinese_name', '')) }}" loading="lazy">
-            <div class="album-info">
-                <h3>{{ a.get('name', a.get('chinese_name', '未知')) }}</h3>
+<div class="album-grid" id="album-grid"></div>
+<div id="album-load-sentinel" style="height:1px"></div>
+<p id="album-loaded-info" style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:1rem"></p>
 
-                {% if a._category == 'relic' %}
-                <p>
-                    {% if a.dynasty and a.dynasty != '未知' %}{{ a.dynasty }}{% endif %}
-                    {% if a.material and a.material != '未知' %} · {{ a.material }}{% endif %}
-                    {% if a.museum and a.museum != '未知' %} · {{ a.museum }}{% endif %}
-                </p>
-                {% else %}
-                <p>
-                    {% if a.scientific_name and a.scientific_name != '未知' %}<em>{{ a.scientific_name }}</em>{% endif %}
-                    {% if a.family and a.family != '未知' %} · {{ a.family }}{% endif %}
-                    {% if a.location %} · {{ a.location }}{% endif %}
-                </p>
-                {% endif %}
+<script>
+const ALBUM_PAGE_SIZE = 60;
+const CATEGORY_LABELS_ALL = {relic: '文物', animal: '动物', plant: '植物'};
+const artifacts = {{ artifacts | tojson | safe }};
+let rendered = 0;
 
-                <small>
-                    <span class="tag-pill tag-{{ a._category }}">{{ a._label }}</span>
-                    {% if a.confidence %}
-                    <span class="badge {% if a.confidence == '高' %}high{% elif a.confidence == '中' %}medium{% else %}low{% endif %}">{{ a.confidence }}</span>
-                    {% endif %}
-                </small>
+function escapeHTML(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function cardHTML(a) {
+    const cat = a._category;
+    const label = a._label || CATEGORY_LABELS_ALL[cat] || '';
+    const name = escapeHTML(a.name || a.chinese_name || '未知');
+    const filename = encodeURIComponent(a.filename);
+    let metaLine;
+    if (cat === 'relic') {
+        const dynasty = (a.dynasty && a.dynasty !== '未知') ? escapeHTML(a.dynasty) : '';
+        const material = (a.material && a.material !== '未知') ? ' · ' + escapeHTML(a.material) : '';
+        metaLine = `<p>${dynasty}${material}</p>`;
+    } else {
+        const sci = (a.scientific_name && a.scientific_name !== '未知') ? `<em>${escapeHTML(a.scientific_name)}</em>` : '';
+        const family = (a.family && a.family !== '未知') ? ' · ' + escapeHTML(a.family) : '';
+        metaLine = `<p>${sci}${family}</p>`;
+    }
+    let badge = '';
+    if (a.confidence) {
+        const cls = a.confidence === '高' ? 'high' : (a.confidence === '中' ? 'medium' : 'low');
+        badge = `<span class="badge ${cls}">${escapeHTML(a.confidence)}</span>`;
+    }
+    return `
+        <a href="/${cat}/${a.id}" class="card-link">
+            <div class="album-card">
+                <img src="/thumbs/${cat}/${filename}" alt="${name}" loading="lazy" decoding="async">
+                <div class="album-info">
+                    <h3>${name}</h3>
+                    ${metaLine}
+                    <small>
+                        <span class="tag-pill tag-${cat}">${escapeHTML(label)}</span>
+                        ${badge}
+                    </small>
+                </div>
             </div>
-        </article>
-    </a>
-    {% endfor %}
-</div>
+        </a>`;
+}
+
+function loadMoreAlbum() {
+    if (rendered >= artifacts.length) return;
+    const slice = artifacts.slice(rendered, rendered + ALBUM_PAGE_SIZE);
+    document.getElementById('album-grid').insertAdjacentHTML('beforeend', slice.map(cardHTML).join(''));
+    rendered += slice.length;
+    document.getElementById('album-loaded-info').textContent =
+        `已加载 ${rendered} / ${artifacts.length}`;
+}
+
+loadMoreAlbum();
+
+if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(entries => {
+        for (const e of entries) {
+            if (e.isIntersecting) loadMoreAlbum();
+        }
+    }, {rootMargin: '800px 0px'});
+    io.observe(document.getElementById('album-load-sentinel'));
+}
+</script>
 {% else %}
 <div class="empty-state">
     {% if query %}
     <p>没有找到匹配 "{{ query }}" 的照片</p>
-    <a href="/album" role="button">查看全部</a>
+    <a href="/album" class="btn">查看全部</a>
     {% else %}
     <p>还没有收录任何照片。</p>
-    <a href="/batch" role="button">批量导入照片</a>
+    <a href="/batch" class="btn">批量导入照片</a>
     {% endif %}
 </div>
 {% endif %}

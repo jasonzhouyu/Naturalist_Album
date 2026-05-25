@@ -35,6 +35,18 @@ settings_manager.py  — Storage path config (settings.json)
 deploy_nas.py        — Docker build + SCP to NAS + docker run via paramiko SSH
 ```
 
+## Frontend
+
+- Pure custom CSS, NO framework (Pico.css removed in UI redesign)
+- Single stylesheet at `static/style.css` with full design system
+  - CSS variables for colors/radius/shadows (`--bg`, `--surface`, `--primary`, `--radius`, etc.)
+  - Apple-inspired neutrals + dark fixed top navbar
+  - Card-based gallery (Google Photos style): `auto-fill` grid, 4:3 aspect ratio, hover scale
+  - Detail page is two-column on desktop (`detail-grid`), stacks on mobile
+  - System font stack, no external font loads
+- Templates extend `base.html`. Active nav highlight via `request.url.path` checks.
+- All JS is inline in templates (no separate JS files yet)
+
 ## Route ordering (CRITICAL)
 
 FastAPI matches routes in registration order. Specific routes MUST register before wildcard `/{category}` and `/{category}/{artifact_id}`. Current order in main.py:
@@ -46,35 +58,44 @@ FastAPI matches routes in registration order. Specific routes MUST register befo
 5. `/upload/{category}` — GET/POST
 6. `/batch` — GET
 7. `/batch/scan` — POST
-8. `/batch/upload-files` — POST (browser folder picker)
-9. `/batch/{session_id}` — GET
-10. `/batch-preview/{session_id}/{index}` — GET
-11. `/batch/{session_id}/tag` — POST
-12. `/batch/{session_id}/location` — POST
-13. `/batch/{session_id}/process` — POST
-14. `/share/{share_id}` — GET
-15. `/api/share/{category}/{artifact_id}` — POST
-16. `/api/share/{share_id}` — DELETE
-17. `/photo/{category}/{artifact_id}` — GET (indexed files)
-18. `/{category}` — category album (WILDCARD)
-19. `/api/{category}` — JSON API
-20. `/{category}/{artifact_id}` — detail page (WILDCARD)
-21. DELETE `/{category}/{artifact_id}`
-22. POST `/{category}/{artifact_id}/edit`
+8. `/api/browse-dir` — POST (server-side directory browser)
+9. `/batch/upload-files` — POST (legacy browser folder picker, kept but UI-removed)
+10. `/batch/{session_id}` — GET
+11. `/batch-preview/{session_id}/{index}` — GET
+12. `/batch/{session_id}/tag` — POST
+13. `/batch/{session_id}/location` — POST
+14. `/batch/{session_id}/process` — POST
+15. `/share/{share_id}` — GET
+16. `/api/share/{category}/{artifact_id}` — POST
+17. `/api/share/{share_id}` — DELETE
+18. `/photo/{category}/{artifact_id}` — GET (indexed files)
+19. `/{category}` — category album (WILDCARD)
+20. `/api/{category}` — JSON API
+21. `/{category}/{artifact_id}` — detail page (WILDCARD)
+22. DELETE `/{category}/{artifact_id}`
+23. POST `/{category}/{artifact_id}/edit`
 
-**Never** add a new route after line 18 without placing it before the wildcards, or it will 404.
+**Never** add a new route after the wildcards without placing it before, or it will 404.
 
 ## Key flows
 
-### Batch import (primary workflow)
-1. User enters directory path OR uses browser folder picker
-2. Server scans directory / receives uploads → creates session
-3. User tags each photo with category (relic/animal/plant/null) and optional location
-4. "处理全部" → `POST /batch/{id}/process` → calls `process_photo()` per tagged file
-5. `process_photo()`: RAW extract → cache lookup → AI recognize → AI description → copy to album (or index only) → thumbnail → metadata
+### Batch import (primary workflow — index-in-place)
+1. User opens `/batch` and uses the **server-side directory browser** to navigate drives + NAS UNC paths
+2. Click a folder → drills in via `POST /api/browse-dir`. Folder contents listed; image count shown if photos exist
+3. Click "扫描目录" → `POST /batch/scan` creates session by listing image files in-place (no upload, no copy)
+4. User tags each photo with category (relic/animal/plant/null) and optional location
+5. "处理全部" → `POST /batch/{id}/process` → calls `process_photo()` per tagged file
+6. Index-only mode is **enabled by default** — original files stay where they are; only thumbnails + metadata are stored
+
+### Directory browser API
+- `POST /api/browse-dir` with `{"path": "..."}` (empty = list drives + NAS roots)
+- Returns `{items: [{name, path, type}], current, image_count}`
+- `type` is `drive` | `network` | `dir`
+- NAS roots hardcoded: `\\DX4600-HOMENAS`, `\\192.168.31.233`
+- Hidden files (`.foo`) skipped; permission errors return 403
 
 ### Index-only mode
-When `index_only=True` checkbox is checked in batch page:
+- Default ON in batch flow
 - Skips `shutil.copy2` — original file stays in place
 - Stores `source_path` (absolute path) in artifact metadata
 - Still generates thumbnails in `thumbs/{category}/`
@@ -125,7 +146,20 @@ When `index_only=True` checkbox is checked in batch page:
 
 ## Template notes
 
-- Jinja2 templates in `templates/`, Pico.css v2 for styling
-- `base.html` provides nav bar with links to all sections
+- Templates in `templates/`, plain Jinja2, no framework
+- `base.html` provides fixed top dark navbar with active-state highlighting
 - All templates use `request` as first arg to `TemplateResponse` (Starlette 1.0.0 requirement)
 - Category labels in templates: `CATEGORY_LABELS = {"relic": "文物", "animal": "动物", "plant": "植物"}`
+- Breadcrumb pattern: `<ul class="breadcrumb">` with auto separators via CSS
+
+## Recent changes (2026-05-25 session)
+
+- **UI redesign**: Removed Pico.css, wrote custom CSS design system (`static/style.css`). Card-based gallery, dark fixed navbar, hover animations, fadeInUp entrance animation.
+- **Batch import flow rewrite**: Removed browser-based folder upload (caused "upload N files?" prompts). Replaced with server-side directory browser at `POST /api/browse-dir` — clickable tree starting from drives + NAS roots. UNC paths supported.
+- **Index-only by default**: The "仅索引" checkbox in batch_tag is now checked by default — files stay in place.
+
+## Known issues / TODO
+
+- UNC path validation in `session_manager.create_session` uses `Path(directory).resolve()` which may transform `\\server\share` paths unexpectedly. If user reports "不是有效目录" for a NAS path that exists, check whether `resolve()` is the culprit.
+- No batch deletion / re-tagging from album view — once processed, photos can only be edited/deleted one-by-one via detail page.
+- No way to re-scan a directory and pick up new photos (would need session merge logic).

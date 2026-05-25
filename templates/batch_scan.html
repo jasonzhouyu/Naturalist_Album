@@ -2,107 +2,248 @@
 {% block title %}批量导入 - 自然观察相册{% endblock %}
 {% block content %}
 
-<nav aria-label="breadcrumb">
-    <ul>
-        <li><a href="/">首页</a></li>
-        <li>批量导入</li>
-    </ul>
-</nav>
+<ul class="breadcrumb">
+    <li><a href="/">首页</a></li>
+    <li>批量导入</li>
+</ul>
 
 <h1>批量导入</h1>
 
-<!-- PC 模式：目录路径 + 文件夹选择器 -->
-<div id="pc-mode">
-    <p>选择一种方式导入照片：</p>
-
-    <!-- 方式 A: 文件夹选择器（浏览器上传） -->
-    <div class="import-card" style="margin-bottom:1.5rem">
-        <h3>浏览目录</h3>
-        <p style="color:var(--pico-muted-color);font-size:0.9rem">打开文件夹选择器，选择包含照片的目录</p>
-        <button onclick="document.getElementById('folder-input-scan').click()" style="font-size:1em">
-            浏览目录
-        </button>
-        <input id="folder-input-scan" type="file" multiple hidden
-               webkitdirectory directory
-               onchange="handleFolderPick(this.files)">
-        <div id="folder-progress" class="progress-area" style="display:none;margin-top:1rem">
-            <h4 id="folder-progress-title">上传文件中...</h4>
-            <progress id="folder-progress-bar" value="0" max="100"></progress>
-        </div>
-        <div id="folder-error" class="error-message" style="display:none;margin-top:0.5rem"></div>
-    </div>
-
-    <!-- 方式 B: 路径输入（服务器直接扫描） -->
+<div class="batch-scan-form" style="max-width:700px">
     <div class="import-card">
-        <h3>输入路径</h3>
-        <p style="color:var(--pico-muted-color);font-size:0.9rem">输入本地目录的完整路径，服务器直接扫描（更快，但需要输入路径）</p>
-        <label for="dir-path" style="margin-bottom:0.5rem">
-            <input
-                id="dir-path"
-                type="text"
-                placeholder="例如: C:\Users\jason\Pictures\2024-05-25"
-                style="font-family: monospace"
-            >
-        </label>
+        <h3>选择目录</h3>
+        <p>浏览并选择包含照片的目录，服务器直接索引（文件保留在原位）</p>
+
+        <div class="dir-browser">
+            <div class="dir-path-bar">
+                <input id="dir-path" type="text" placeholder="点击下方浏览或直接输入路径" style="font-family:monospace">
+                <button onclick="doScan()" id="scan-btn">扫描目录</button>
+            </div>
+
+            <div class="dir-tree" id="dir-tree">
+                <div class="dir-loading">加载中...</div>
+            </div>
+
+            <div id="dir-info" class="dir-info" style="display:none"></div>
+            <div id="dir-stats" class="dir-stats" style="display:none"></div>
+        </div>
+
         <div id="scan-error" class="error-message" style="display:none"></div>
-        <button onclick="doScan()" id="scan-btn">扫描目录</button>
     </div>
 </div>
 
+<style>
+.dir-browser { margin-top: 1rem; }
+
+.dir-path-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.dir-path-bar input { flex: 1; }
+
+.dir-tree {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    max-height: 400px;
+    overflow-y: auto;
+    background: var(--bg);
+}
+
+.dir-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.88rem;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+.dir-item:last-child { border-bottom: none; }
+.dir-item:hover { background: var(--surface); }
+.dir-item.active { background: rgba(0,113,227,0.06); color: var(--primary); font-weight: 500; }
+
+.dir-item-icon {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+.dir-item-icon svg { width: 100%; height: 100%; display: block; }
+.dir-item:hover .dir-item-icon { color: var(--primary); }
+.dir-item.dir-back .dir-item-icon { color: var(--text-muted); }
+.dir-item-meta { font-size: 0.78rem; color: var(--text-muted); margin-left: 0.5rem; }
+.dir-truncated-note {
+    padding: 0.6rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.dir-item-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dir-back {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.dir-info {
+    margin-top: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    color: #065f46;
+}
+.dir-stats {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.dir-stats.slow { color: #b45309; }
+
+.dir-loading {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.dir-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: dir-spin 0.7s linear infinite;
+}
+@keyframes dir-spin { to { transform: rotate(360deg); } }
+</style>
+
 <script>
-// === 方式 A: 文件夹选择器 ===
-async function handleFolderPick(files) {
-    if (!files || files.length === 0) return;
+// 简洁的 line-icon (Heroicons / Lucide 风格)，stroke 1.6
+const ICONS = {
+    drive: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><line x1="7" y1="7" x2="7.01" y2="7"/><line x1="7" y1="17" x2="7.01" y2="17"/></svg>',
+    network: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg>',
+    dir: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.4l1.6 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10z"/></svg>',
+    back: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+    spinner: '<span class="dir-spinner" aria-hidden="true"></span>'
+};
 
-    const progressDiv = document.getElementById('folder-progress');
-    const progressBar = document.getElementById('folder-progress-bar');
-    const progressTitle = document.getElementById('folder-progress-title');
-    const errorDiv = document.getElementById('folder-error');
+let currentPath = '';
+let inflight = 0;
 
-    errorDiv.style.display = 'none';
-    progressDiv.style.display = 'block';
-
-    // Build file list
-    const fileList = [];
-    for (const f of files) {
-        fileList.push({name: f.name, size: f.size});
-    }
-
-    const total = fileList.length;
-    progressTitle.textContent = `正在上传 ${total} 个文件...`;
-
-    // Upload files to server to create a session
-    const formData = new FormData();
-    for (const f of files) {
-        formData.append('files', f);
-    }
+async function browseTo(path) {
+    const tree = document.getElementById('dir-tree');
+    const info = document.getElementById('dir-info');
+    const stats = document.getElementById('dir-stats');
+    const myCall = ++inflight;
+    const tStart = performance.now();
+    tree.innerHTML = `<div class="dir-loading">${ICONS.spinner}<span>加载中...</span></div>`;
+    info.style.display = 'none';
+    stats.style.display = 'none';
+    console.log(`[browse-dir] → ${path || '(roots)'}`);
 
     try {
-        const resp = await fetch('/batch/upload-files', {
+        const resp = await fetch('/api/browse-dir', {
             method: 'POST',
-            body: formData,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: path})
         });
+        const tNet = performance.now() - tStart;
+        if (myCall !== inflight) {
+            console.log(`[browse-dir] dropped stale response for ${path}`);
+            return;
+        }
         const data = await resp.json();
+        const tTotal = performance.now() - tStart;
+        console.log(`[browse-dir] ← ${data.current || '(roots)'} | net=${tNet.toFixed(0)}ms total=${tTotal.toFixed(0)}ms server=${data.scan_ms || '?'}ms`, data.stats || '');
 
         if (data.error) {
-            errorDiv.textContent = data.error;
-            errorDiv.style.display = 'block';
-            progressDiv.style.display = 'none';
-        } else {
-            progressBar.value = 100;
-            progressTitle.textContent = '上传完成，正在跳转...';
-            setTimeout(() => {
-                window.location.href = '/batch/' + data.session_id;
-            }, 500);
+            tree.innerHTML = `<div class="dir-loading" style="color:var(--danger)">${escapeHTML(data.error)}</div>`;
+            return;
         }
+
+        currentPath = data.current;
+        document.getElementById('dir-path').value = currentPath;
+
+        let html = '';
+
+        if (currentPath) {
+            const parent = currentPath.includes('\\')
+                ? currentPath.substring(0, currentPath.lastIndexOf('\\')) || ''
+                : '';
+            html += `<div class="dir-item dir-back" onclick="browseTo('${escPath(parent)}')">
+                <span class="dir-item-icon">${ICONS.back}</span>
+                <span class="dir-item-name">返回上级</span>
+            </div>`;
+        }
+
+        for (const item of data.items) {
+            const icon = ICONS[item.type] || ICONS.dir;
+            html += `<div class="dir-item" onclick="browseTo('${escPath(item.path)}')" title="${escapeHTML(item.path)}">
+                <span class="dir-item-icon">${icon}</span>
+                <span class="dir-item-name">${escapeHTML(item.name)}</span>
+            </div>`;
+        }
+
+        if (data.items.length === 0 && currentPath) {
+            html += '<div class="dir-loading"><span>此目录下没有子文件夹</span></div>';
+        }
+        if (data.dirs_truncated) {
+            html += `<div class="dir-truncated-note">子目录超过 500 项，已截断显示。可在上方路径栏直接输入完整路径。</div>`;
+        }
+
+        tree.innerHTML = html;
+
+        if (data.image_count > 0) {
+            const display = data.image_count_capped ? '1000+' : data.image_count;
+            info.innerHTML = `此目录包含 <strong>${display}</strong> 张照片，可以直接扫描`;
+            info.style.display = 'block';
+        }
+
+        if (data.stats) {
+            const s = data.stats;
+            const tNet = performance.now() - tStart;
+            const slow = s.total_ms > 1000;
+            stats.className = 'dir-stats' + (slow ? ' slow' : '');
+            stats.textContent =
+                `entries=${s.entries_seen} dirs=${s.dirs} files=${s.files}` +
+                (s.errors > 0 ? ` errors=${s.errors}` : '') +
+                ` · scan=${s.scan_ms}ms total=${s.total_ms}ms net=${tNet.toFixed(0)}ms` +
+                (slow ? '  ⚠ 慢' : '');
+            stats.style.display = 'block';
+        }
+
     } catch (e) {
-        errorDiv.textContent = '上传失败: ' + e.message;
-        errorDiv.style.display = 'block';
-        progressDiv.style.display = 'none';
+        if (myCall !== inflight) return;
+        tree.innerHTML = `<div class="dir-loading" style="color:var(--danger)"><span>请求失败: ${escapeHTML(e.message)}</span></div>`;
     }
 }
 
-// === 方式 B: 路径输入 ===
+function escPath(p) {
+    return p.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function escapeHTML(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 async function doScan() {
     const input = document.getElementById('dir-path');
     const btn = document.getElementById('scan-btn');
@@ -110,7 +251,7 @@ async function doScan() {
     const directory = input.value.trim();
 
     if (!directory) {
-        errDiv.textContent = '请输入目录路径';
+        errDiv.textContent = '请选择或输入目录路径';
         errDiv.style.display = 'block';
         return;
     }
@@ -144,6 +285,8 @@ async function doScan() {
 document.getElementById('dir-path').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') doScan();
 });
+
+browseTo('');
 </script>
 
 {% endblock %}

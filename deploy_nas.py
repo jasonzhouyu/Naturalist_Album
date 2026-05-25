@@ -1,5 +1,6 @@
 """Deploy nature-album to NAS via SSH — uses stdin pipe for file transfer."""
 import os
+import re
 import tarfile
 import io
 import paramiko
@@ -9,11 +10,28 @@ NAS_USER = "pcwork"
 NAS_PASS = "Shanghai2025/"
 APP_DIR = "/home/pcwork/nature-album"
 LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_ENV = r"Y:\Openclaw\workspace\.env"
 DASHSCOPE_KEY = "sk-a2da2273a94f4f47b76c5c739f2efa1a"
 SUDO = f"echo '{NAS_PASS}' | sudo -S"
 
 EXCLUDE = {"__pycache__", "uploads", "deploy_nas.py", ".git", "migrate.py",
-          "llm_cache.json", "batch_sessions.json", "shares.json", ".env"}
+          "llm_cache.json", "batch_sessions.json", "shares.json", ".env",
+          "keys", ".inat_state", "batch_sessions"}
+
+
+def read_local_env() -> dict:
+    """从 Y: .env 读取需要分发到 NAS 的 key。本地缺失就返回空。"""
+    if not os.path.exists(LOCAL_ENV):
+        return {}
+    out = {}
+    with open(LOCAL_ENV, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
 
 
 def create_tarball():
@@ -87,13 +105,48 @@ def main():
         exit_code = channel.recv_exit_status()
     print(f"       Uploaded (exit {exit_code})")
 
+    local = read_local_env()
+    plantnet_key = local.get("PLANTNET_API_KEY", "")
+    inat_user = local.get("INATURALIST_USERNAME", "")
+    inat_pass = local.get("INATURALIST_PASSWORD", "")
+
+    nas_env_lines = [f"DASHSCOPE_API_KEY={DASHSCOPE_KEY}"]
+    if plantnet_key:
+        nas_env_lines.append(f"PLANTNET_API_KEY={plantnet_key}")
+    nas_env = "\\n".join(nas_env_lines)
+
+    creds_setup = ""
+    if inat_user and inat_pass:
+        creds_setup = (
+            f"mkdir -p keys && "
+            f"printf 'INATURALIST_USERNAME=%s\\nINATURALIST_PASSWORD=%s\\n' "
+            f"'{inat_user}' '{inat_pass}' > keys/inat_creds.env && "
+            f"chmod 600 keys/inat_creds.env && "
+        )
+        print("       [+] iNat creds: pushing to keys/inat_creds.env")
+    else:
+        creds_setup = (
+            "mkdir -p keys && "
+            "[ -f keys/inat_creds.env ] || "
+            "printf 'INATURALIST_USERNAME=\\nINATURALIST_PASSWORD=\\n' > keys/inat_creds.env && "
+            "chmod 600 keys/inat_creds.env && "
+        )
+        print("       [!] iNat creds missing locally — placeholder created on NAS, "
+              "sidecar will fail until you fill keys/inat_creds.env")
+
+    if plantnet_key:
+        print(f"       [+] PLANTNET_API_KEY: synced ({len(plantnet_key)} chars)")
+    else:
+        print("       [!] PLANTNET_API_KEY: not in local .env, skipping")
+
     print("[3/4] Building Docker...")
     cmd = (
         f"cd {APP_DIR} && "
         f"tar -xzf nature-album.tar.gz && "
         f"mkdir -p album/relic album/animal album/plant "
         f"thumbs/relic thumbs/animal thumbs/plant uploads && "
-        f"echo 'DASHSCOPE_API_KEY={DASHSCOPE_KEY}' > .env && "
+        f"printf '{nas_env}\\n' > .env && "
+        f"{creds_setup}"
         f"{SUDO} docker compose build --no-cache 2>&1 && "
         f"{SUDO} docker compose down 2>/dev/null; "
         f"{SUDO} docker compose up -d && "

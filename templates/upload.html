@@ -2,13 +2,11 @@
 {% block title %}上传{{ label }}照片{% endblock %}
 {% block content %}
 
-<nav aria-label="breadcrumb">
-    <ul>
-        <li><a href="/">首页</a></li>
-        <li><a href="/{{ category }}">{{ label }}</a></li>
-        <li>上传照片</li>
-    </ul>
-</nav>
+<ul class="breadcrumb">
+    <li><a href="/">首页</a></li>
+    <li><a href="/{{ category }}">{{ label }}</a></li>
+    <li>上传照片</li>
+</ul>
 
 <h1>上传{{ label }}照片</h1>
 
@@ -26,7 +24,7 @@
 
 <div class="upload-buttons">
     <button onclick="document.getElementById('file-input').click()">选择文件</button>
-    <button onclick="document.getElementById('folder-input').click()">选择文件夹</button>
+    <button onclick="document.getElementById('folder-input').click()" class="secondary">选择文件夹</button>
 </div>
 
 <input id="file-input" type="file" multiple hidden
@@ -91,7 +89,7 @@ async function handleFiles(files) {
     }
 
     title.textContent = '处理完成！';
-    results.innerHTML += `<br><a href="/${category}" role="button">回${category === 'relic' ? '文物' : category === 'animal' ? '动物' : '植物'}相册</a>`;
+    results.innerHTML += `<br><a href="/${category}" class="btn">回${category === 'relic' ? '文物' : category === 'animal' ? '动物' : '植物'}相册</a>`;
 }
 
 function handleDrop(event) {

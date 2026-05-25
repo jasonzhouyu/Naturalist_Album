@@ -13,7 +13,13 @@ thumbs/**/*
 migrate.py
 llm_cache.json
 batch_sessions.json
+batch_sessions.json.bak
+batch_sessions/
+.inat_state/
+relic-album.log
 shares.json
+*.bak
+*.bak.json
 settings.json
 .env
 uploads/sessions/

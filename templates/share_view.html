@@ -7,105 +7,105 @@
     <small>此页面为公开分享链接，仅供查看</small>
 </div>
 
-<nav aria-label="breadcrumb">
-    <ul>
-        <li><a href="/">首页</a></li>
-        <li>{{ artifact.get('name', artifact.get('chinese_name', '')) }}</li>
-    </ul>
-</nav>
+<ul class="breadcrumb">
+    <li><a href="/">首页</a></li>
+    <li>{{ artifact.get('name', artifact.get('chinese_name', '')) }}</li>
+</ul>
 
 <div class="detail-layout">
-    <div class="detail-image">
-        <img src="/album/{{ artifact.filename }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
-    </div>
+    <div class="detail-grid">
+        <div class="detail-image">
+            <img src="/album/{{ artifact.filename }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
+        </div>
 
-    <div class="detail-info">
-        <h1>{{ artifact.get('name', artifact.get('chinese_name', '未知')) }}</h1>
+        <div class="detail-info">
+            <h1>{{ artifact.get('name', artifact.get('chinese_name', '未知')) }}</h1>
 
-        {% if category == 'relic' %}
-            {% if artifact.scientific_name %}
-            <p class="subtitle"><em>{{ artifact.scientific_name }}</em></p>
-            {% endif %}
-            {% if artifact.dynasty and artifact.dynasty != '未知' %}
-            <p class="subtitle">{{ artifact.dynasty }}</p>
-            {% endif %}
-        {% else %}
-            {% if artifact.scientific_name and artifact.scientific_name != '未知' %}
-            <p class="subtitle"><em>{{ artifact.scientific_name }}</em></p>
-            {% endif %}
-        {% endif %}
-
-        {% if category == 'relic' %}
-        <table class="info-table">
-            <tbody>
+            {% if category == 'relic' %}
+                {% if artifact.scientific_name %}
+                <p class="subtitle"><em>{{ artifact.scientific_name }}</em></p>
+                {% endif %}
                 {% if artifact.dynasty and artifact.dynasty != '未知' %}
-                <tr><th>朝代</th><td>{{ artifact.dynasty }}</td></tr>
+                <p class="subtitle">{{ artifact.dynasty }}</p>
                 {% endif %}
-                {% if artifact.dynasty_period and artifact.dynasty_period != '未知' %}
-                <tr><th>朝代时间</th><td>{{ artifact.dynasty_period }}</td></tr>
+            {% else %}
+                {% if artifact.scientific_name and artifact.scientific_name != '未知' %}
+                <p class="subtitle"><em>{{ artifact.scientific_name }}</em></p>
                 {% endif %}
-                {% if artifact.gregorian_years and artifact.gregorian_years != '未知' %}
-                <tr><th>公元纪年</th><td>{{ artifact.gregorian_years }}</td></tr>
-                {% endif %}
-                {% if artifact.material and artifact.material != '未知' %}
-                <tr><th>材质</th><td>{{ artifact.material }}</td></tr>
-                {% endif %}
-                {% if artifact.category and artifact.category != '未知' %}
-                <tr><th>类别</th><td>{{ artifact.category }}</td></tr>
-                {% endif %}
-                {% if artifact.museum and artifact.museum != '未知' %}
-                <tr><th>博物馆</th><td>{{ artifact.museum }}</td></tr>
-                {% endif %}
-                {% if artifact.discovery_place and artifact.discovery_place != '未知' %}
-                <tr><th>发现地址</th><td>{{ artifact.discovery_place }}</td></tr>
-                {% endif %}
-                {% if artifact.confidence %}
-                <tr><th>识别置信度</th><td>{{ artifact.confidence }}</td></tr>
-                {% endif %}
-                {% if artifact.location %}
-                <tr><th>拍摄地址</th><td>{{ artifact.location }}</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
-        {% else %}
-        <table class="info-table">
-            <tbody>
-                {% if artifact.kingdom and artifact.kingdom != '未知' %}
-                <tr><th>界</th><td>{{ artifact.kingdom }}</td></tr>
-                {% endif %}
-                {% if artifact.phylum and artifact.phylum != '未知' %}
-                <tr><th>门</th><td>{{ artifact.phylum }}</td></tr>
-                {% endif %}
-                {% if artifact['class'] and artifact['class'] != '未知' %}
-                <tr><th>纲</th><td>{{ artifact['class'] }}</td></tr>
-                {% endif %}
-                {% if artifact.order and artifact.order != '未知' %}
-                <tr><th>目</th><td>{{ artifact.order }}</td></tr>
-                {% endif %}
-                {% if artifact.family and artifact.family != '未知' %}
-                <tr><th>科</th><td>{{ artifact.family }}</td></tr>
-                {% endif %}
-                {% if artifact.genus and artifact.genus != '未知' %}
-                <tr><th>属</th><td>{{ artifact.genus }}</td></tr>
-                {% endif %}
-                {% if artifact.species and artifact.species != '未知' %}
-                <tr><th>种</th><td>{{ artifact.species }}</td></tr>
-                {% endif %}
-                {% if artifact.distribution and artifact.distribution != '未知' %}
-                <tr><th>分布区域</th><td>{{ artifact.distribution }}</td></tr>
-                {% endif %}
-                {% if artifact.habitat and artifact.habitat != '未知' %}
-                <tr><th>栖息/生长环境</th><td>{{ artifact.habitat }}</td></tr>
-                {% endif %}
-                {% if artifact.confidence %}
-                <tr><th>识别置信度</th><td>{{ artifact.confidence }}</td></tr>
-                {% endif %}
-                {% if artifact.location %}
-                <tr><th>拍摄地址</th><td>{{ artifact.location }}</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
-        {% endif %}
+            {% endif %}
+
+            {% if category == 'relic' %}
+            <table class="info-table">
+                <tbody>
+                    {% if artifact.dynasty and artifact.dynasty != '未知' %}
+                    <tr><th>朝代</th><td>{{ artifact.dynasty }}</td></tr>
+                    {% endif %}
+                    {% if artifact.dynasty_period and artifact.dynasty_period != '未知' %}
+                    <tr><th>朝代时间</th><td>{{ artifact.dynasty_period }}</td></tr>
+                    {% endif %}
+                    {% if artifact.gregorian_years and artifact.gregorian_years != '未知' %}
+                    <tr><th>公元纪年</th><td>{{ artifact.gregorian_years }}</td></tr>
+                    {% endif %}
+                    {% if artifact.material and artifact.material != '未知' %}
+                    <tr><th>材质</th><td>{{ artifact.material }}</td></tr>
+                    {% endif %}
+                    {% if artifact.category and artifact.category != '未知' %}
+                    <tr><th>类别</th><td>{{ artifact.category }}</td></tr>
+                    {% endif %}
+                    {% if artifact.museum and artifact.museum != '未知' %}
+                    <tr><th>博物馆</th><td>{{ artifact.museum }}</td></tr>
+                    {% endif %}
+                    {% if artifact.discovery_place and artifact.discovery_place != '未知' %}
+                    <tr><th>发现地址</th><td>{{ artifact.discovery_place }}</td></tr>
+                    {% endif %}
+                    {% if artifact.confidence %}
+                    <tr><th>识别置信度</th><td>{{ artifact.confidence }}</td></tr>
+                    {% endif %}
+                    {% if artifact.location %}
+                    <tr><th>拍摄地址</th><td>{{ artifact.location }}</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            {% else %}
+            <table class="info-table">
+                <tbody>
+                    {% if artifact.kingdom and artifact.kingdom != '未知' %}
+                    <tr><th>界</th><td>{{ artifact.kingdom }}</td></tr>
+                    {% endif %}
+                    {% if artifact.phylum and artifact.phylum != '未知' %}
+                    <tr><th>门</th><td>{{ artifact.phylum }}</td></tr>
+                    {% endif %}
+                    {% if artifact['class'] and artifact['class'] != '未知' %}
+                    <tr><th>纲</th><td>{{ artifact['class'] }}</td></tr>
+                    {% endif %}
+                    {% if artifact.order and artifact.order != '未知' %}
+                    <tr><th>目</th><td>{{ artifact.order }}</td></tr>
+                    {% endif %}
+                    {% if artifact.family and artifact.family != '未知' %}
+                    <tr><th>科</th><td>{{ artifact.family }}</td></tr>
+                    {% endif %}
+                    {% if artifact.genus and artifact.genus != '未知' %}
+                    <tr><th>属</th><td>{{ artifact.genus }}</td></tr>
+                    {% endif %}
+                    {% if artifact.species and artifact.species != '未知' %}
+                    <tr><th>种</th><td>{{ artifact.species }}</td></tr>
+                    {% endif %}
+                    {% if artifact.distribution and artifact.distribution != '未知' %}
+                    <tr><th>分布区域</th><td>{{ artifact.distribution }}</td></tr>
+                    {% endif %}
+                    {% if artifact.habitat and artifact.habitat != '未知' %}
+                    <tr><th>栖息/生长环境</th><td>{{ artifact.habitat }}</td></tr>
+                    {% endif %}
+                    {% if artifact.confidence %}
+                    <tr><th>识别置信度</th><td>{{ artifact.confidence }}</td></tr>
+                    {% endif %}
+                    {% if artifact.location %}
+                    <tr><th>拍摄地址</th><td>{{ artifact.location }}</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
     </div>
 
     {% if artifact.description %}
@@ -116,7 +116,7 @@
     {% endif %}
 </div>
 
-<p style="text-align:center;color:var(--pico-muted-color);margin-top:2rem;font-size:0.85em">
+<p style="text-align:center;color:var(--text-muted);margin-top:2rem;font-size:0.85em">
     由 <a href="/">自然观察相册</a> 共享
 </p>
 

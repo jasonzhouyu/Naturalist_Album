@@ -2,37 +2,36 @@
 {% block title %}设置 - 自然观察相册{% endblock %}
 {% block content %}
 
-<nav aria-label="breadcrumb">
-    <ul>
-        <li><a href="/">首页</a></li>
-        <li>设置</li>
-    </ul>
-</nav>
+<ul class="breadcrumb">
+    <li><a href="/">首页</a></li>
+    <li>设置</li>
+</ul>
 
 <h1>设置</h1>
 
 <div class="batch-scan-form">
-    <label for="storage-path">
-        <strong>照片存储路径</strong>
-        <small style="display:block;color:var(--pico-muted-color);margin-top:0.25rem">
-            所有识别归档的照片和缩略图将保存在此路径下的 album/ 和 thumbs/ 目录中
-        </small>
-        <input
-            id="storage-path"
-            type="text"
-            value="{{ settings.storage_path }}"
-            placeholder="例如: D:\Photos\NatureAlbum"
-            style="font-family: monospace;margin-top:0.5rem"
-        >
-    </label>
-    <div id="save-error" class="error-message" style="display:none"></div>
-    <div id="save-ok" style="color:#2e7d32;display:none;margin-bottom:1rem">保存成功</div>
-    <button onclick="doSave()" id="save-btn">保存</button>
-</div>
+    <div class="import-card">
+        <label>
+            <strong style="color:var(--text)">照片存储路径</strong>
+            <small style="display:block;color:var(--text-muted);margin:0.3rem 0 0.5rem">
+                所有识别归档的照片和缩略图将保存在此路径下的 album/ 和 thumbs/ 目录中
+            </small>
+            <input
+                id="storage-path"
+                type="text"
+                value="{{ settings.storage_path }}"
+                placeholder="例如: D:\Photos\NatureAlbum"
+                style="font-family: monospace"
+            >
+        </label>
+        <div id="save-error" class="error-message" style="display:none"></div>
+        <div id="save-ok" style="color:var(--success);display:none;margin-bottom:0.75rem;font-size:0.9rem">保存成功</div>
+        <button onclick="doSave()" id="save-btn">保存</button>
+    </div>
 
-<div style="margin-top:2rem;padding:1rem;background:#f9f9f9;border-radius:var(--card-radius)">
-    <h3 style="margin-top:0">当前目录结构</h3>
-    <pre style="font-size:0.85rem;margin:0">{{ settings.storage_path }}
+    <div class="settings-panel">
+        <h3 style="margin-top:0">当前目录结构</h3>
+        <pre style="margin:0">{{ settings.storage_path }}
   ├── album/
   │   ├── relic/
   │   ├── animal/
@@ -41,6 +40,7 @@
       ├── relic/
       ├── animal/
       └── plant/</pre>
+    </div>
 </div>
 
 <script>

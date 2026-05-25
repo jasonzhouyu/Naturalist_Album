@@ -5,12 +5,15 @@ import shutil
 import json
 from pathlib import Path
 
+import log_setup  # noqa: F401  -- side effect: tee stdout/stderr to relic-album.log
+
 from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).resolve().parent
 os.chdir(str(BASE_DIR))
+print(f"[startup] log file: {log_setup.LOG_PATH}")
 
 CATEGORIES = ["relic", "animal", "plant"]
 
@@ -176,6 +179,125 @@ async def batch_scan(request: Request):
     return JSONResponse({"session_id": session["id"], "file_count": len(session["files"])})
 
 
+@app.post("/api/browse-dir")
+async def browse_directory(request: Request):
+    import time
+    body = await request.json()
+    path = body.get("path", "").strip()
+    t0 = time.perf_counter()
+
+    if not path:
+        import string
+        drives = []
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            t_drv = time.perf_counter()
+            ok = os.path.isdir(drive)
+            dt = (time.perf_counter() - t_drv) * 1000
+            if dt > 100:
+                print(f"[browse-dir] slow drive probe {drive}: {dt:.0f}ms (offline?)")
+            if ok:
+                drives.append({"name": f"{letter}:", "path": drive, "type": "drive"})
+        network_paths = [
+            {"name": "\\\\DX4600-HOMENAS", "path": "\\\\DX4600-HOMENAS", "type": "network"},
+            {"name": "\\\\192.168.31.233", "path": "\\\\192.168.31.233", "type": "network"},
+        ]
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"[browse-dir] roots: {len(drives)} drives in {elapsed:.0f}ms")
+        return JSONResponse({
+            "items": drives + network_paths, "current": "", "scan_ms": int(elapsed),
+        })
+
+    t_check = time.perf_counter()
+    target = Path(path)
+    is_dir = target.is_dir()
+    t_check_ms = (time.perf_counter() - t_check) * 1000
+    if not is_dir:
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"[browse-dir] {path} → not a dir (check {t_check_ms:.0f}ms, total {elapsed:.0f}ms)")
+        return JSONResponse({"error": f"路径不存在: {path}"}, status_code=400)
+
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif",
+                  ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2"}
+    DIR_CAP = 500
+    IMAGE_CAP = 1000
+    items = []
+    image_count = 0
+    dirs_truncated = False
+    n_seen = 0          # 总 dirent 条目数（含被跳过的）
+    n_dirs_actual = 0   # 真实子目录数（不受 DIR_CAP 限制）
+    n_files_actual = 0  # 真实文件数
+    n_oserror = 0
+    t_scan = time.perf_counter()
+    try:
+        with os.scandir(str(target)) as it:
+            for entry in it:
+                n_seen += 1
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        n_dirs_actual += 1
+                        if len(items) < DIR_CAP:
+                            items.append({"name": entry.name, "path": entry.path, "type": "dir"})
+                        else:
+                            dirs_truncated = True
+                    elif entry.is_file(follow_symlinks=False):
+                        n_files_actual += 1
+                        ext = os.path.splitext(entry.name)[1].lower()
+                        if ext in image_exts and image_count < IMAGE_CAP:
+                            image_count += 1
+                except OSError:
+                    n_oserror += 1
+                    continue
+                # 桶都满了就早退
+                if dirs_truncated and image_count >= IMAGE_CAP:
+                    break
+    except PermissionError:
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"[browse-dir] {path} → PermissionError after {elapsed:.0f}ms")
+        return JSONResponse({"error": "没有访问权限"}, status_code=403)
+    except OSError as e:
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"[browse-dir] {path} → OSError {e} after {elapsed:.0f}ms")
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    scan_ms = (time.perf_counter() - t_scan) * 1000
+    t_sort = time.perf_counter()
+    items.sort(key=lambda x: x["name"].lower())
+    sort_ms = (time.perf_counter() - t_sort) * 1000
+    elapsed = (time.perf_counter() - t0) * 1000
+
+    print(f"[browse-dir] {path}")
+    print(f"             seen={n_seen} dirs={n_dirs_actual} files={n_files_actual} "
+          f"images={image_count}{'+' if image_count >= IMAGE_CAP else ''} "
+          f"errors={n_oserror}")
+    print(f"             check={t_check_ms:.0f}ms scan={scan_ms:.0f}ms "
+          f"sort={sort_ms:.0f}ms total={elapsed:.0f}ms"
+          f"{' [SLOW]' if elapsed > 1000 else ''}")
+    if n_seen > 0 and scan_ms > 500:
+        per_entry = scan_ms / n_seen
+        print(f"             per-entry: {per_entry:.2f}ms "
+              f"({'SMB/network' if per_entry > 1 else 'local'} latency)")
+
+    return JSONResponse({
+        "items": items,
+        "current": str(target),
+        "image_count": image_count,
+        "image_count_capped": image_count >= IMAGE_CAP,
+        "dirs_truncated": dirs_truncated,
+        "scan_ms": int(elapsed),
+        "stats": {
+            "entries_seen": n_seen,
+            "dirs": n_dirs_actual,
+            "files": n_files_actual,
+            "errors": n_oserror,
+            "scan_ms": int(scan_ms),
+            "total_ms": int(elapsed),
+        },
+    })
+
+
 @app.post("/batch/upload-files")
 async def batch_upload_files(request: Request):
     """接收浏览器上传的文件，创建临时会话目录"""
@@ -235,17 +357,68 @@ async def batch_tag_page(request: Request, session_id: str):
     })
 
 
-@app.get("/batch-preview/{session_id}/{index}")
-async def serve_batch_preview(session_id: str, index: int):
-    from fastapi.responses import FileResponse
+@app.get("/batch/{session_id}/files")
+async def batch_files_page(session_id: str, offset: int = 0, limit: int = 200):
     session = get_session(session_id)
     if not session:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    files = session["files"]
+    end = min(offset + max(1, limit), len(files))
+    return JSONResponse({
+        "files": files[offset:end],
+        "offset": offset,
+        "next_offset": end if end < len(files) else None,
+        "total": len(files),
+    })
+
+
+@app.get("/batch-preview/{session_id}/{index}")
+async def serve_batch_preview(session_id: str, index: int, full: int = 0):
+    import time
+    from fastapi.responses import FileResponse, Response
+    import thumb_cache
+
+    t0 = time.perf_counter()
+    session = get_session(session_id)
+    if not session:
+        print(f"[batch-preview] {session_id}/{index}: session not found")
         return HTMLResponse("Session not found", status_code=404)
     try:
         file_info = session["files"][int(index)]
     except (IndexError, ValueError):
+        print(f"[batch-preview] {session_id}/{index}: bad index")
         return HTMLResponse("File not found", status_code=404)
-    return FileResponse(file_info["path"])
+
+    source = file_info["path"]
+    name = Path(source).name
+    if full:
+        return FileResponse(source)
+
+    cached_path = thumb_cache.thumb_path(session_id, int(index))
+    was_cached = cached_path.exists() and cached_path.stat().st_size > 0
+
+    thumb = thumb_cache.get_or_create(session_id, int(index), source)
+    elapsed = (time.perf_counter() - t0) * 1000
+
+    if thumb is not None:
+        size = thumb.stat().st_size
+        # 缓存命中只在慢的时候打印；新生成的全打印
+        if not was_cached:
+            print(f"[batch-preview] GEN  idx={index} {name} → {size}B in {elapsed:.0f}ms")
+        elif elapsed > 200:
+            print(f"[batch-preview] HIT  idx={index} {name} slow {elapsed:.0f}ms")
+        return FileResponse(
+            str(thumb),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    print(f"[batch-preview] FAIL idx={index} {name} after {elapsed:.0f}ms — thumb_cache returned None")
+    raw_exts = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2"}
+    if Path(source).suffix.lower() in raw_exts:
+        # 原始 RAW 浏览器解不了，返回 502 而不是损坏图片
+        return Response(status_code=502, content="failed to extract RAW preview")
+    return FileResponse(source)
 
 
 @app.post("/batch/{session_id}/tag")
