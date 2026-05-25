@@ -281,6 +281,17 @@ nav[aria-label="breadcrumb"] {
     margin-bottom: 1rem;
 }
 
+.import-card {
+    background: #f9f9f9;
+    border-radius: var(--card-radius);
+    padding: 1.5rem;
+    border: 2px solid #e0e0e0;
+}
+
+.import-card h3 {
+    margin-top: 0;
+}
+
 .error-message {
     color: var(--pico-del-color, #c62828);
     background: var(--pico-del-background, #ffebee);

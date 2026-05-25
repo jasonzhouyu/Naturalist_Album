@@ -19,8 +19,9 @@ from utils import (
     ALLOWED_EXTENSIONS, CATEGORIES,
 )
 from processor import process_photo
-from session_manager import create_session, get_session, tag_files, set_location
+from session_manager import create_session, get_session, tag_files, set_location, save_session
 from share_manager import create_share, get_share, delete_share
+from settings_manager import load_settings, save_settings, get_storage_path
 
 app = FastAPI(title="自然观察相册")
 
@@ -62,6 +63,27 @@ async def index(request: Request):
         "labels": CATEGORY_LABELS,
         "counts": counts,
     })
+
+
+# === 设置页 ===
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    s = load_settings()
+    return templates.TemplateResponse(request, "settings.html", {"settings": s})
+
+
+@app.post("/settings")
+async def settings_save(request: Request):
+    body = await request.json()
+    storage_path = body.get("storage_path", "").strip()
+    if not storage_path:
+        return JSONResponse({"error": "请输入存储路径"}, status_code=400)
+    p = Path(storage_path)
+    if not p.is_absolute():
+        return JSONResponse({"error": "请输入绝对路径"}, status_code=400)
+    save_settings({"storage_path": str(p)})
+    return JSONResponse({"ok": True})
 
 
 # === 统一相册（跨品类搜索） ===
@@ -152,6 +174,55 @@ async def batch_scan(request: Request):
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"session_id": session["id"], "file_count": len(session["files"])})
+
+
+@app.post("/batch/upload-files")
+async def batch_upload_files(request: Request):
+    """接收浏览器上传的文件，创建临时会话目录"""
+    import tempfile
+    form = await request.form()
+    uploaded = form.getlist("files")
+
+    if not uploaded:
+        return JSONResponse({"error": "没有选择文件"}, status_code=400)
+
+    # 创建临时会话目录
+    tmp_root = BASE_DIR / "uploads" / "sessions"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    session_id = uuid.uuid4().hex
+    session_dir = tmp_root / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    files = []
+    for i, f in enumerate(uploaded):
+        safe_name = Path(f.filename).name
+        dest = session_dir / safe_name
+        with open(dest, "wb") as out:
+            content = await f.read()
+            out.write(content)
+        files.append({
+            "index": len(files),
+            "path": str(dest),
+            "name": safe_name,
+            "category": None,
+            "location": None,
+        })
+
+    if not files:
+        shutil.rmtree(session_dir)
+        return JSONResponse({"error": "没有有效的图片文件"}, status_code=400)
+
+    # 复用 session_manager 的数据结构
+    session = {
+        "id": session_id,
+        "directory": str(session_dir),
+        "files": files,
+        "default_location": "",
+        "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone(__import__("datetime").timedelta(hours=8))).isoformat(),
+    }
+
+    save_session(session)
+    return JSONResponse({"session_id": session_id, "file_count": len(files)})
 
 
 @app.get("/batch/{session_id}", response_class=HTMLResponse)

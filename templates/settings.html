@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}设置 - 自然观察相册{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">首页</a></li>
+        <li>设置</li>
+    </ul>
+</nav>
+
+<h1>设置</h1>
+
+<div class="batch-scan-form">
+    <label for="storage-path">
+        <strong>照片存储路径</strong>
+        <small style="display:block;color:var(--pico-muted-color);margin-top:0.25rem">
+            所有识别归档的照片和缩略图将保存在此路径下的 album/ 和 thumbs/ 目录中
+        </small>
+        <input
+            id="storage-path"
+            type="text"
+            value="{{ settings.storage_path }}"
+            placeholder="例如: D:\Photos\NatureAlbum"
+            style="font-family: monospace;margin-top:0.5rem"
+        >
+    </label>
+    <div id="save-error" class="error-message" style="display:none"></div>
+    <div id="save-ok" style="color:#2e7d32;display:none;margin-bottom:1rem">保存成功</div>
+    <button onclick="doSave()" id="save-btn">保存</button>
+</div>
+
+<div style="margin-top:2rem;padding:1rem;background:#f9f9f9;border-radius:var(--card-radius)">
+    <h3 style="margin-top:0">当前目录结构</h3>
+    <pre style="font-size:0.85rem;margin:0">{{ settings.storage_path }}
+  ├── album/
+  │   ├── relic/
+  │   ├── animal/
+  │   └── plant/
+  └── thumbs/
+      ├── relic/
+      ├── animal/
+      └── plant/</pre>
+</div>
+
+<script>
+async function doSave() {
+    const input = document.getElementById('storage-path');
+    const btn = document.getElementById('save-btn');
+    const errDiv = document.getElementById('save-error');
+    const okDiv = document.getElementById('save-ok');
+    const path = input.value.trim();
+
+    errDiv.style.display = 'none';
+    okDiv.style.display = 'none';
+
+    if (!path) {
+        errDiv.textContent = '请输入存储路径';
+        errDiv.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+
+    try {
+        const resp = await fetch('/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({storage_path: path})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            errDiv.textContent = data.error;
+            errDiv.style.display = 'block';
+        } else {
+            okDiv.style.display = 'block';
+            setTimeout(() => okDiv.style.display = 'none', 3000);
+        }
+    } catch (e) {
+        errDiv.textContent = '请求失败: ' + e.message;
+        errDiv.style.display = 'block';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '保存';
+}
+</script>
+
+{% endblock %}

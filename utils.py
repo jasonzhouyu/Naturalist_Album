@@ -15,9 +15,17 @@ ALLOWED_EXTENSIONS = RAW_EXTENSIONS | IMAGE_EXTENSIONS
 
 CATEGORIES = ["relic", "animal", "plant"]
 
+from settings_manager import get_storage_path
+
 BASE_DIR = Path(__file__).resolve().parent
-ALBUM_BASE = BASE_DIR / "album"
-THUMBS_BASE = BASE_DIR / "thumbs"
+
+
+def _album_base() -> Path:
+    return get_storage_path() / "album"
+
+
+def _thumbs_base() -> Path:
+    return get_storage_path() / "thumbs"
 
 
 def is_raw(filename: str) -> bool:
@@ -29,13 +37,13 @@ def is_image(filename: str) -> bool:
 
 
 def get_album_dir(category: str) -> Path:
-    d = ALBUM_BASE / category
+    d = _album_base() / category
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_thumbs_dir(category: str) -> Path:
-    d = THUMBS_BASE / category
+    d = _thumbs_base() / category
     d.mkdir(parents=True, exist_ok=True)
     return d
 

@@ -74,6 +74,12 @@ def tag_files(session_id: str, indices: list[int], category: str | None):
     return session
 
 
+def save_session(session: dict):
+    sessions = _load()
+    sessions[session["id"]] = session
+    _save(sessions)
+
+
 def set_location(session_id: str, location: str, indices: list[int] | None = None):
     sessions = _load()
     session = sessions.get(session_id)

@@ -14,4 +14,6 @@ migrate.py
 llm_cache.json
 batch_sessions.json
 shares.json
+settings.json
 .env
+uploads/sessions/

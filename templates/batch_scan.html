@@ -11,23 +11,98 @@
 
 <h1>批量导入</h1>
 
-<p>输入本地照片目录的完整路径，系统会扫描目录中的所有图片文件供你预览和标记分类。</p>
+<!-- PC 模式：目录路径 + 文件夹选择器 -->
+<div id="pc-mode">
+    <p>选择一种方式导入照片：</p>
 
-<div class="batch-scan-form">
-    <label for="dir-path">
-        <strong>目录路径</strong>
-        <input
-            id="dir-path"
-            type="text"
-            placeholder="例如: C:\Users\jason\Pictures\2024-05-25"
-            style="font-family: monospace"
-        >
-    </label>
-    <div id="scan-error" class="error-message" style="display:none"></div>
-    <button onclick="doScan()" id="scan-btn">扫描目录</button>
+    <!-- 方式 A: 文件夹选择器（浏览器上传） -->
+    <div class="import-card" style="margin-bottom:1.5rem">
+        <h3>浏览目录</h3>
+        <p style="color:var(--pico-muted-color);font-size:0.9rem">打开文件夹选择器，选择包含照片的目录</p>
+        <button onclick="document.getElementById('folder-input-scan').click()" style="font-size:1em">
+            浏览目录
+        </button>
+        <input id="folder-input-scan" type="file" multiple hidden
+               webkitdirectory directory
+               onchange="handleFolderPick(this.files)">
+        <div id="folder-progress" class="progress-area" style="display:none;margin-top:1rem">
+            <h4 id="folder-progress-title">上传文件中...</h4>
+            <progress id="folder-progress-bar" value="0" max="100"></progress>
+        </div>
+        <div id="folder-error" class="error-message" style="display:none;margin-top:0.5rem"></div>
+    </div>
+
+    <!-- 方式 B: 路径输入（服务器直接扫描） -->
+    <div class="import-card">
+        <h3>输入路径</h3>
+        <p style="color:var(--pico-muted-color);font-size:0.9rem">输入本地目录的完整路径，服务器直接扫描（更快，但需要输入路径）</p>
+        <label for="dir-path" style="margin-bottom:0.5rem">
+            <input
+                id="dir-path"
+                type="text"
+                placeholder="例如: C:\Users\jason\Pictures\2024-05-25"
+                style="font-family: monospace"
+            >
+        </label>
+        <div id="scan-error" class="error-message" style="display:none"></div>
+        <button onclick="doScan()" id="scan-btn">扫描目录</button>
+    </div>
 </div>
 
 <script>
+// === 方式 A: 文件夹选择器 ===
+async function handleFolderPick(files) {
+    if (!files || files.length === 0) return;
+
+    const progressDiv = document.getElementById('folder-progress');
+    const progressBar = document.getElementById('folder-progress-bar');
+    const progressTitle = document.getElementById('folder-progress-title');
+    const errorDiv = document.getElementById('folder-error');
+
+    errorDiv.style.display = 'none';
+    progressDiv.style.display = 'block';
+
+    // Build file list
+    const fileList = [];
+    for (const f of files) {
+        fileList.push({name: f.name, size: f.size});
+    }
+
+    const total = fileList.length;
+    progressTitle.textContent = `正在上传 ${total} 个文件...`;
+
+    // Upload files to server to create a session
+    const formData = new FormData();
+    for (const f of files) {
+        formData.append('files', f);
+    }
+
+    try {
+        const resp = await fetch('/batch/upload-files', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            errorDiv.textContent = data.error;
+            errorDiv.style.display = 'block';
+            progressDiv.style.display = 'none';
+        } else {
+            progressBar.value = 100;
+            progressTitle.textContent = '上传完成，正在跳转...';
+            setTimeout(() => {
+                window.location.href = '/batch/' + data.session_id;
+            }, 500);
+        }
+    } catch (e) {
+        errorDiv.textContent = '上传失败: ' + e.message;
+        errorDiv.style.display = 'block';
+        progressDiv.style.display = 'none';
+    }
+}
+
+// === 方式 B: 路径输入 ===
 async function doScan() {
     const input = document.getElementById('dir-path');
     const btn = document.getElementById('scan-btn');
