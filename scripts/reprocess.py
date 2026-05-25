@@ -86,8 +86,9 @@ def reprocess_category(category: str, dry_run: bool = False) -> dict:
             continue
 
         t = time.time()
+        location = art.get("location", "") or ""
         try:
-            new_info = recognize(str(src), category)
+            new_info = recognize(str(src), category, location=location)
         except Exception as e:
             print(f"  {i:>2}. [err]  {aid} {short(old_name)} — recognize: {type(e).__name__}: {e}")
             errors += 1

@@ -60,7 +60,7 @@ def process_photo(file_path: str, category: str, location: str = "", index_only:
         description = cached["description"]
     else:
         try:
-            info = recognize(working_path, category)
+            info = recognize(working_path, category, location=location)
         except Exception as e:
             return {"error": f"识别失败: {str(e)}"}
 

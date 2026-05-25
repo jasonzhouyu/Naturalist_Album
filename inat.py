@@ -56,7 +56,8 @@ class InatLowConfidence(Exception):
         super().__init__(f"low confidence, {len(candidates)} candidates")
 
 
-def score_image(image_path: str, locale: str = "zh-CN") -> dict:
+def score_image(image_path: str, locale: str = "zh-CN",
+                lat: float | None = None, lng: float | None = None) -> dict:
     jwt = get_inat_jwt()
     if not jwt:
         raise InatError("INATURALIST_JWT not set (check .env or INAT_JWT_FILE)")
@@ -75,7 +76,11 @@ def score_image(image_path: str, locale: str = "zh-CN") -> dict:
     body.write(image_data)
     body.write(f"\r\n--{boundary}--\r\n".encode())
 
-    url = f"{CV_URL}?{urllib.parse.urlencode({'locale': locale})}"
+    params: dict = {"locale": locale}
+    if lat is not None and lng is not None:
+        params["lat"] = lat
+        params["lng"] = lng
+    url = f"{CV_URL}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, data=body.getvalue(), method="POST", headers={
         "Authorization": f"Bearer {jwt}",
         "Content-Type": f"multipart/form-data; boundary={boundary}",
@@ -94,7 +99,8 @@ def score_image(image_path: str, locale: str = "zh-CN") -> dict:
         raise InatError(f"iNat connection failed: {e}")
 
 
-def recognize_animal(image_path: str) -> dict | None:
+def recognize_animal(image_path: str, lat: float | None = None,
+                     lng: float | None = None) -> dict | None:
     """高级识别。
 
     返回:
@@ -103,7 +109,7 @@ def recognize_animal(image_path: str) -> dict | None:
         - 低置信度: raise InatLowConfidence (上层应兜底 Qwen-VL)
         - 完全失败: raise InatError
     """
-    response = score_image(image_path)
+    response = score_image(image_path, lat=lat, lng=lng)
     results = response.get("results") or []
     if not results:
         raise InatLowConfidence([])

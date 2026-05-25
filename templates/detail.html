@@ -160,6 +160,9 @@
             <div class="grid">
                 <label>栖息/生长环境 <input type="text" name="habitat" value="{{ artifact.habitat or '' }}"></label>
             </div>
+            <div class="grid">
+                <label>拍摄位置 <input type="text" name="location" value="{{ artifact.location or '' }}" placeholder="新疆 伊犁哈萨克自治州（省+市，空格分隔）"></label>
+            </div>
             {% endif %}
             <button type="submit">保存</button>
         </form>

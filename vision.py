@@ -227,11 +227,20 @@ INTRODUCTION_PROMPTS = {
 
 # === 公共接口 ===
 
-def recognize(filename: str, category: str) -> dict:
+def recognize(filename: str, category: str, location: str = "") -> dict:
     """主识别入口。返回与 RECOGNITION_PROMPTS 模板一致的 schema dict。
 
     自动处理 RAW: 先抽嵌入 JPEG 缩到 2048px 给下游 API（Pl@ntNet/iNat 不收 RAW）。
+    location: 用户输入的拍摄地址，会用高德地理编码转 lat/lng 传给 iNat/Pl@ntNet
+              提升地域准确性（避免新疆物种被识别为欧洲种）。
     """
+    lat = lng = None
+    if location:
+        from geocode import lookup
+        coords = lookup(location)
+        if coords:
+            lat, lng = coords
+
     working_path = filename
     tmp_to_cleanup: str | None = None
     if Path(filename).suffix.lower() in RAW_EXTS:
@@ -242,9 +251,9 @@ def recognize(filename: str, category: str) -> dict:
 
     try:
         if category == "animal":
-            return _recognize_animal(working_path)
+            return _recognize_animal(working_path, lat=lat, lng=lng)
         if category == "plant":
-            return _recognize_plant(working_path)
+            return _recognize_plant(working_path, lat=lat, lng=lng)
         return _recognize_with_qwen_vl(working_path, category)
     finally:
         if tmp_to_cleanup:
@@ -308,10 +317,11 @@ def _placeholder_names(template: str) -> list[str]:
 
 # === 动物路径 ===
 
-def _recognize_animal(filename: str) -> dict:
+def _recognize_animal(filename: str, lat: float | None = None,
+                     lng: float | None = None) -> dict:
     import inat
     try:
-        partial = inat.recognize_animal(filename)
+        partial = inat.recognize_animal(filename, lat=lat, lng=lng)
     except inat.InatLowConfidence as e:
         # 低置信度: 把候选作为 hint 给 Qwen-VL
         return _recognize_with_qwen_vl(filename, "animal", candidates=e.candidates)
@@ -322,19 +332,196 @@ def _recognize_animal(filename: str) -> dict:
     return _complete_with_qwen_plus(partial, category="animal")
 
 
-# === 植物路径 ===
+# === 植物路径（双源交叉比对：Pl@ntNet + iNat）===
 
-def _recognize_plant(filename: str) -> dict:
+def _recognize_plant(filename: str, lat: float | None = None,
+                     lng: float | None = None) -> dict:
     import plantnet
-    try:
-        partial = plantnet.recognize_plant(filename)
-    except plantnet.PlantnetLowConfidence as e:
-        return _recognize_with_qwen_vl(filename, "plant", candidates=e.candidates)
-    except plantnet.PlantnetError as e:
-        print(f"[vision] Pl@ntNet unavailable, falling back to Qwen-VL: {e}")
+    import inat
+
+    pn_top = _query_plantnet_top(filename, n=3, lat=lat, lng=lng)
+    inat_top = _query_inat_plant_top(filename, n=3, lat=lat, lng=lng)
+
+    # 两边都没回应
+    if not pn_top and not inat_top:
+        print("[vision] both Pl@ntNet and iNat unavailable, Qwen-VL fallback")
         return _recognize_with_qwen_vl(filename, "plant")
 
-    return _complete_with_qwen_plus(partial, category="plant")
+    # 只有一边
+    if pn_top and not inat_top:
+        print(f"[vision] iNat unavailable, using Pl@ntNet only: {pn_top[0]['scientific_name']}")
+        partial = _pn_to_schema(pn_top[0], confidence="中")
+        partial["_cross_ref"] = "pn_only"
+        return _complete_with_qwen_plus(partial, "plant")
+    if inat_top and not pn_top:
+        print(f"[vision] Pl@ntNet unavailable, using iNat only: {inat_top[0]['scientific_name']}")
+        partial = _inat_to_schema(inat_top[0], confidence="中")
+        partial["_cross_ref"] = "inat_only"
+        return _complete_with_qwen_plus(partial, "plant")
+
+    # 双源交叉
+    pn_pick = pn_top[0]
+    inat_pick = inat_top[0]
+    pn_names = [t["scientific_name"] for t in pn_top]
+    inat_names = [t["scientific_name"] for t in inat_top]
+
+    # Case 1: 两边 top-1 完全一致 → 最高置信度
+    if pn_pick["scientific_name"] == inat_pick["scientific_name"]:
+        print(f"[vision] cross-ref AGREE: {pn_pick['scientific_name']}")
+        partial = _pn_to_schema(pn_pick, confidence="高")
+        # iNat 的中文名通常更标准（zh-CN locale 走规范库）
+        if inat_pick["common_name"]:
+            partial["chinese_name"] = inat_pick["common_name"]
+        partial["_cross_ref"] = "agree"
+        return _complete_with_qwen_plus(partial, "plant")
+
+    # Case 2: Pl@ntNet 的 top-1 出现在 iNat 的 top-3
+    if pn_pick["scientific_name"] in inat_names:
+        print(f"[vision] cross-ref PN_CONFIRMED: {pn_pick['scientific_name']} "
+              f"(iNat top-1: {inat_pick['scientific_name']})")
+        partial = _pn_to_schema(pn_pick, confidence="高")
+        for it in inat_top:
+            if it["scientific_name"] == pn_pick["scientific_name"] and it["common_name"]:
+                partial["chinese_name"] = it["common_name"]
+                break
+        partial["_cross_ref"] = "pn_confirmed_by_inat"
+        return _complete_with_qwen_plus(partial, "plant")
+
+    # Case 3: iNat 的 top-1 出现在 Pl@ntNet 的 top-3
+    if inat_pick["scientific_name"] in pn_names:
+        print(f"[vision] cross-ref INAT_CONFIRMED: {inat_pick['scientific_name']} "
+              f"(PN top-1: {pn_pick['scientific_name']})")
+        for pn in pn_top:
+            if pn["scientific_name"] == inat_pick["scientific_name"]:
+                partial = _pn_to_schema(pn, confidence="高")
+                if inat_pick["common_name"]:
+                    partial["chinese_name"] = inat_pick["common_name"]
+                partial["_cross_ref"] = "inat_confirmed_by_pn"
+                return _complete_with_qwen_plus(partial, "plant")
+
+    # Case 4: 完全分歧 → Qwen-VL 用图片仲裁，把两边 top-3 都丢给它
+    combined: list[dict] = []
+    for t in pn_top[:3]:
+        combined.append({
+            "source": "Pl@ntNet",
+            "scientific_name": t["scientific_name"],
+            "common_names": t["common_names"][:2],
+            "score": round(t["score"], 3),
+        })
+    for t in inat_top[:3]:
+        combined.append({
+            "source": "iNat",
+            "scientific_name": t["scientific_name"],
+            "common_name": t["common_name"],
+            "score": round(t["score"], 1),
+        })
+    print(f"[vision] cross-ref DISAGREE: PN={pn_pick['scientific_name']} "
+          f"vs iNat={inat_pick['scientific_name']} — Qwen-VL arbitrating")
+    return _recognize_with_qwen_vl(filename, "plant", candidates=combined)
+
+
+def _query_plantnet_top(filename: str, n: int,
+                        lat: float | None = None, lng: float | None = None) -> list[dict]:
+    """返回 Pl@ntNet top-n 候选（标准化 schema）。失败返回空列表。"""
+    import plantnet
+    try:
+        resp = plantnet.identify(filename, lat=lat, lng=lng)
+    except plantnet.PlantnetLowConfidence:
+        return []
+    except plantnet.PlantnetError as e:
+        print(f"[vision] Pl@ntNet error: {e}")
+        return []
+    out = []
+    for r in (resp.get("results") or [])[:n]:
+        sp = r.get("species") or {}
+        out.append({
+            "scientific_name": sp.get("scientificNameWithoutAuthor", ""),
+            "common_names": sp.get("commonNames") or [],
+            "family": (sp.get("family") or {}).get("scientificNameWithoutAuthor", ""),
+            "genus": (sp.get("genus") or {}).get("scientificNameWithoutAuthor", ""),
+            "score": float(r.get("score") or 0),
+            "raw": r,
+        })
+    return out
+
+
+def _query_inat_plant_top(filename: str, n: int,
+                          lat: float | None = None, lng: float | None = None) -> list[dict]:
+    """返回 iNat top-n 植物候选（filter iconic_taxon_name=Plantae）。失败返回空列表。"""
+    import inat
+    try:
+        resp = inat.score_image(filename, locale="zh-CN", lat=lat, lng=lng)
+    except inat.InatError as e:
+        print(f"[vision] iNat error: {e}")
+        return []
+    out = []
+    for r in (resp.get("results") or []):
+        t = r.get("taxon") or {}
+        iconic = t.get("iconic_taxon_name", "")
+        if iconic and iconic != "Plantae":
+            continue
+        out.append({
+            "scientific_name": t.get("name", ""),
+            "common_name": t.get("preferred_common_name", ""),
+            "rank": t.get("rank", ""),
+            "score": float(r.get("combined_score") or 0),
+            "raw": r,
+        })
+        if len(out) >= n:
+            break
+    return out
+
+
+def _pn_to_schema(pn: dict, confidence: str) -> dict:
+    """Pl@ntNet top → 我们的 schema。中文名取首个含汉字的；缺则首个 commonName。"""
+    common_names = pn.get("common_names") or []
+    chinese = next((n for n in common_names if any("一" <= c <= "鿿" for c in n)), "")
+    if not chinese and common_names:
+        chinese = common_names[0]
+    sci = pn.get("scientific_name", "")
+    species_part = sci.split(" ", 1)[1] if " " in sci else ""
+    return {
+        "chinese_name": chinese,
+        "scientific_name": sci,
+        "kingdom": "Plantae",
+        "phylum": "",
+        "class": "",
+        "order": "",
+        "family": pn.get("family", ""),
+        "genus": pn.get("genus", ""),
+        "species": species_part,
+        "distribution": "",
+        "habitat": "",
+        "confidence": confidence,
+        "_plantnet_score": round(pn.get("score", 0), 3),
+    }
+
+
+def _inat_to_schema(it: dict, confidence: str) -> dict:
+    """iNat top → 我们的 schema。"""
+    sci = it.get("scientific_name", "")
+    rank = it.get("rank", "")
+    genus = ""
+    species = ""
+    if rank == "species" and " " in sci:
+        genus, species = sci.split(" ", 1)
+    elif rank == "genus":
+        genus = sci
+    return {
+        "chinese_name": it.get("common_name", ""),
+        "scientific_name": sci,
+        "kingdom": "Plantae",
+        "phylum": "",
+        "class": "",
+        "order": "",
+        "family": "",
+        "genus": genus,
+        "species": species,
+        "distribution": "",
+        "habitat": "",
+        "confidence": confidence,
+        "_inat_score": round(it.get("score", 0), 1),
+    }
 
 
 # === Qwen-VL 主流程（文物/兜底） ===

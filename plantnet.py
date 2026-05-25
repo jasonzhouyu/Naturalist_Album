@@ -32,7 +32,13 @@ class PlantnetLowConfidence(Exception):
         super().__init__(f"low confidence, {len(candidates)} candidates")
 
 
-def identify(image_path: str, organs: str = "auto") -> dict:
+def identify(image_path: str, organs: str = "auto",
+             lat: float | None = None, lng: float | None = None) -> dict:
+    # 注意: Pl@ntNet identify 端点不支持 lat/lng query 参数
+    # （会返回 400 "latitude is not allowed"）。
+    # 地理偏置只能通过选择 regional project 实现，但目前没有覆盖中国的项目。
+    # 这里保留参数签名以便上层一致传递，但实际不下发。
+    _ = (lat, lng)
     api_key = get_secret("PLANTNET_API_KEY")
     if not api_key:
         raise PlantnetError("PLANTNET_API_KEY not set (check .env)")
@@ -57,7 +63,8 @@ def identify(image_path: str, organs: str = "auto") -> dict:
     body.write(image_data)
     body.write(f"\r\n--{boundary}--\r\n".encode())
 
-    url = f"{API_URL}?{urllib.parse.urlencode({'api-key': api_key, 'lang': 'zh', 'no-reject': 'false'})}"
+    qs: dict = {"api-key": api_key, "lang": "zh", "no-reject": "false"}
+    url = f"{API_URL}?{urllib.parse.urlencode(qs)}"
     req = urllib.request.Request(url, data=body.getvalue(), method="POST", headers={
         "Content-Type": f"multipart/form-data; boundary={boundary}",
         "User-Agent": USER_AGENT,
@@ -78,8 +85,9 @@ def identify(image_path: str, organs: str = "auto") -> dict:
         raise PlantnetError(f"Pl@ntNet connection failed: {e}")
 
 
-def recognize_plant(image_path: str) -> dict:
-    response = identify(image_path)
+def recognize_plant(image_path: str, lat: float | None = None,
+                    lng: float | None = None) -> dict:
+    response = identify(image_path, lat=lat, lng=lng)
     results = response.get("results") or []
     if not results:
         raise PlantnetLowConfidence([])

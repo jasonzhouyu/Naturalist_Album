@@ -15,9 +15,10 @@
 
 <div class="batch-toolbar">
     <div class="toolbar-row">
-        <label style="margin:0;display:flex;align-items:center;gap:0.5rem">
+        <label style="margin:0;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
             <span style="white-space:nowrap;font-weight:500;color:var(--text)">拍摄地址:</span>
-            <input id="location-input" type="text" value="{{ session.default_location }}" placeholder="输入拍摄地址" style="max-width:250px">
+            <input id="province-input" type="text" placeholder="省 (如: 新疆)" style="max-width:140px" title="提供省级信息可显著提升识别准确性">
+            <input id="city-input" type="text" placeholder="市/区 (可选)" style="max-width:200px" title="更精确的位置进一步提升地域识别">
         </label>
         <button onclick="applyLocation(null)" class="secondary" style="white-space:nowrap">应用到全部</button>
         <button onclick="applyLocation(getSelectedIndices())" class="secondary" style="white-space:nowrap">应用到所选</button>
@@ -223,9 +224,27 @@ function refreshCards() {
     updateCounter();
 }
 
+function joinLocation(province, city) {
+    province = (province || '').trim();
+    city = (city || '').trim();
+    if (province && city) return `${province} ${city}`;
+    return province || city || '';
+}
+
+function splitLocation(loc) {
+    if (!loc) return ['', ''];
+    const parts = loc.trim().split(/\s+/);
+    return [parts[0] || '', parts.slice(1).join(' ')];
+}
+
 async function applyLocation(indices) {
-    const loc = document.getElementById('location-input').value.trim();
-    if (!loc) return;
+    const province = document.getElementById('province-input').value.trim();
+    const city = document.getElementById('city-input').value.trim();
+    const loc = joinLocation(province, city);
+    if (!loc) {
+        alert('请输入省（建议）或市');
+        return;
+    }
     if (indices && indices.length === 0) {
         alert('请先勾选照片，或使用"应用到全部"');
         return;
@@ -325,6 +344,12 @@ async function startProcess() {
 function closeProcess() {
     document.getElementById('process-overlay').style.display = 'none';
 }
+
+// 初始化省/市输入框（从 session.default_location 拆出）
+const _defaultLoc = {{ session.default_location | tojson | safe }} || '';
+const [_initProv, _initCity] = splitLocation(_defaultLoc);
+document.getElementById('province-input').value = _initProv;
+document.getElementById('city-input').value = _initCity;
 
 // 初始渲染：先吐 PAGE_SIZE 张，超出部分滚动到底自动追加
 appendCards(files.slice(0, PAGE_SIZE));
