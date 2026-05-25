@@ -2,6 +2,7 @@ services:
   nature-album:
     build:
       context: .
+      network: host           # NAS 透明代理在 host 网络生效，bridge 网络访问国际镜像源会超时
       args:
         - HTTP_PROXY=
         - HTTPS_PROXY=
@@ -24,7 +25,18 @@ services:
     restart: unless-stopped
 
   inat-jwt-refresher:
-    image: mcr.microsoft.com/playwright/python:v1.59.0-noble
+    build:
+      context: .
+      dockerfile: Dockerfile.inat-refresh
+      network: host
+      args:                # 显式 unset 代理，避免 buildkit 继承 NAS 主机 HTTP_PROXY=127.0.0.1:7890
+        - HTTP_PROXY=
+        - HTTPS_PROXY=
+        - http_proxy=
+        - https_proxy=
+        - NO_PROXY=*
+        - no_proxy=*
+    image: relic-album-inat-refresh:latest
     container_name: inat-jwt-refresher
     network_mode: host           # 走 NAS 主网，享受透明代理（容器 NAT 后会绕过路由器代理）
     env_file:
