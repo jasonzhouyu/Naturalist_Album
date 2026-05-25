@@ -35,7 +35,7 @@ def extract_raw_preview(raw_path: str) -> str | None:
         return None
 
 
-def process_photo(file_path: str, category: str, location: str = "") -> dict:
+def process_photo(file_path: str, category: str, location: str = "", index_only: bool = False) -> dict:
     """处理单张照片：RAW提取 → 缓存检查 → 识别 → 简介 → 命名 → 归档"""
     filename = os.path.basename(file_path)
     original_filename = filename
@@ -81,17 +81,18 @@ def process_photo(file_path: str, category: str, location: str = "") -> dict:
         except Exception:
             pass
 
-    # Step 4: 归档文件
+    # Step 4: 归档文件（index_only 模式下跳过复制，仅记录原始路径）
     new_filename = generate_filename(category, info, ext, location=location)
-    album_dir = get_album_dir(category)
-    dest = album_dir / new_filename
-    shutil.copy2(working_path, dest)
+    if not index_only:
+        album_dir = get_album_dir(category)
+        dest = album_dir / new_filename
+        shutil.copy2(working_path, dest)
 
     # Step 5: 缩略图
     create_thumbnail(working_path, category, new_filename)
 
     # Step 6: 写入 metadata
-    artifact = add_artifact(category, {
+    artifact_fields = {
         **info,
         "description": description,
         "distribution_geo": None,
@@ -100,6 +101,9 @@ def process_photo(file_path: str, category: str, location: str = "") -> dict:
         "original_filename": original_filename,
         "size": os.path.getsize(file_path),
         "location": location,
-    })
+    }
+    if index_only:
+        artifact_fields["source_path"] = os.path.abspath(file_path)
+    artifact = add_artifact(category, artifact_fields)
 
     return artifact

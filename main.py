@@ -275,10 +275,13 @@ async def batch_location(session_id: str, request: Request):
 
 
 @app.post("/batch/{session_id}/process")
-async def batch_process(session_id: str):
+async def batch_process(session_id: str, request: Request):
     session = get_session(session_id)
     if not session:
         return JSONResponse({"error": "Session not found"}, status_code=404)
+
+    body = await request.json()
+    index_only = body.get("index_only", False)
 
     to_process = [(f, f["category"]) for f in session["files"]
                   if f["category"] in CATEGORIES]
@@ -290,7 +293,7 @@ async def batch_process(session_id: str):
     for file_info, category in to_process:
         location = file_info.get("location") or session.get("default_location", "")
         try:
-            artifact = process_photo(file_info["path"], category, location=location)
+            artifact = process_photo(file_info["path"], category, location=location, index_only=index_only)
             results.append({"file": file_info["name"], "ok": True, "artifact": artifact})
         except Exception as e:
             results.append({"file": file_info["name"], "ok": False, "error": str(e)})
@@ -355,6 +358,27 @@ async def api_artifacts(category: str):
         return JSONResponse({"error": "不存在的品类"}, status_code=404)
     data = load_metadata(category)
     return JSONResponse(data["artifacts"])
+
+
+# === 照片源文件（索引模式） ===
+
+@app.get("/photo/{category}/{artifact_id}")
+async def serve_photo(category: str, artifact_id: str):
+    from fastapi.responses import FileResponse
+    if not validate_category(category):
+        return HTMLResponse("不存在的品类", status_code=404)
+    data = load_metadata(category)
+    artifact = next((a for a in data["artifacts"] if a["id"] == artifact_id), None)
+    if not artifact:
+        return HTMLResponse("记录不存在", status_code=404)
+    source_path = artifact.get("source_path")
+    if not source_path or not os.path.isfile(source_path):
+        # fallback to album dir
+        album_path = get_album_dir(category) / artifact["filename"]
+        if album_path.exists():
+            return FileResponse(str(album_path))
+        return HTMLResponse("文件不存在", status_code=404)
+    return FileResponse(source_path)
 
 
 # === 详情页 ===

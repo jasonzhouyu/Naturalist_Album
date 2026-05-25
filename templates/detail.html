@@ -12,7 +12,11 @@
 
 <div class="detail-layout">
     <div class="detail-image">
+        {% if artifact.source_path %}
+        <img src="/photo/{{ category }}/{{ artifact.id }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
+        {% else %}
         <img src="/album/{{ artifact.filename }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
+        {% endif %}
     </div>
 
     <div class="detail-info">
