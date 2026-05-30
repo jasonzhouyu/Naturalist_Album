@@ -4,18 +4,16 @@
 
 <h1>全部照片</h1>
 
-<form class="search-bar" onsubmit="event.preventDefault(); search();">
-    <input
-        id="search-input"
-        type="search"
-        placeholder="搜索文物名、朝代、物种、简介..."
-        value="{{ query }}"
-    >
-    <button type="submit">搜索</button>
-    {% if query %}
-    <button type="button" class="secondary" onclick="window.location.href='/album'">清除</button>
-    {% endif %}
-</form>
+<div class="album-controls">
+    <div class="search-bar">
+        <input id="search-input" type="search" placeholder="搜索文物名、朝代、物种、简介..." value="{{ query }}" oninput="search()">
+        <button onclick="search()">搜索</button>
+        {% if query %}
+        <button type="button" class="search-btn-secondary" onclick="window.location.href='/album'">清除</button>
+        {% endif %}
+    </div>
+    <div class="filter-bar" id="filter-bar"></div>
+</div>
 
 {% if query %}
 <p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:0.88rem">
@@ -33,6 +31,9 @@ const ALBUM_PAGE_SIZE = 60;
 const CATEGORY_LABELS_ALL = {relic: '文物', animal: '动物', plant: '植物'};
 const artifacts = {{ artifacts | tojson | safe }};
 let rendered = 0;
+let filteredArtifacts = artifacts;
+let categoryFilter = null;
+let searchQuery = {{ query | tojson }};
 
 function escapeHTML(s) {
     if (s == null) return '';
@@ -43,7 +44,7 @@ function cardHTML(a) {
     const cat = a._category;
     const label = a._label || CATEGORY_LABELS_ALL[cat] || '';
     const name = escapeHTML(a.name || a.chinese_name || '未知');
-    const filename = encodeURIComponent(a.filename);
+    const filename = encodeURIComponent(a.filename.replace(/\.[^.]+$/, '') + '.jpg');
     let metaLine;
     if (cat === 'relic') {
         const dynasty = (a.dynasty && a.dynasty !== '未知') ? escapeHTML(a.dynasty) : '';
@@ -75,13 +76,78 @@ function cardHTML(a) {
         </a>`;
 }
 
+function renderFilterBar() {
+    const bar = document.getElementById('filter-bar');
+    if (!bar) return;
+    const counts = {};
+    artifacts.forEach(a => { counts[a._category] = (counts[a._category] || 0) + 1; });
+    const has = !!categoryFilter;
+    const txt = categoryFilter ? (CATEGORY_LABELS_ALL[categoryFilter]) : '';
+    bar.innerHTML = `
+        <div class="cs">
+            <div class="cs-trig" tabindex="0" onclick="csToggle()" onkeydown="if(event.key==='Enter')csToggle()">
+                <span class="cs-txt">${txt || '全部'}</span>
+                <span class="cs-ind">${has ? '✕' : '▾'}</span>
+            </div>
+            <div class="cs-pnl">
+                <div class="cs-cols" style="min-width:150px"><div class="cs-col" style="border:none;min-width:150px">
+                <div class="cs-lst">
+                    <div class="cs-opt${!categoryFilter ? ' on' : ''}" onclick="setCategory(null);csToggle()">全部 <small>${artifacts.length}</small></div>
+                    ${['relic','animal','plant'].map(c => {
+                        const n = counts[c] || 0;
+                        if (!n) return '';
+                        return '<div class="cs-opt' + (categoryFilter === c ? ' on' : '') + '" onclick="setCategory(\'' + c + '\');csToggle()">' + CATEGORY_LABELS_ALL[c] + ' <small>' + n + '</small></div>';
+                    }).join('')}
+                </div></div></div>
+            </div>
+        </div>
+        ${has ? '<span class="cs-clr" onclick="setCategory(null)">清除筛选</span>' : ''}
+    `;
+}
+
+function csToggle() {
+    const pnl = document.querySelector('.cs-pnl');
+    document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open'));
+    pnl.classList.toggle('open');
+}
+
+function setCategory(cat) {
+    categoryFilter = cat || null;
+    renderFilterBar();
+    applyFilters();
+}
+
+function applyFilters() {
+    const q = document.getElementById('search-input').value.trim();
+    searchQuery = q;
+
+    filteredArtifacts = artifacts.filter(a => {
+        // 品类筛选
+        if (categoryFilter && a._category !== categoryFilter) return false;
+        // 搜索
+        if (q) {
+            const searchText = Object.values(a)
+                .filter(v => typeof v === 'string')
+                .join(' ')
+                .toLowerCase();
+            if (!searchText.includes(q.toLowerCase())) return false;
+        }
+        return true;
+    });
+
+    document.getElementById('album-grid').innerHTML = '';
+    rendered = 0;
+    document.getElementById('album-loaded-info').textContent = '';
+    loadMoreAlbum();
+}
+
 function loadMoreAlbum() {
-    if (rendered >= artifacts.length) return;
-    const slice = artifacts.slice(rendered, rendered + ALBUM_PAGE_SIZE);
+    if (rendered >= filteredArtifacts.length) return;
+    const slice = filteredArtifacts.slice(rendered, rendered + ALBUM_PAGE_SIZE);
     document.getElementById('album-grid').insertAdjacentHTML('beforeend', slice.map(cardHTML).join(''));
     rendered += slice.length;
     document.getElementById('album-loaded-info').textContent =
-        `已加载 ${rendered} / ${artifacts.length}`;
+        `已加载 ${rendered} / ${filteredArtifacts.length}`;
 }
 
 loadMoreAlbum();
@@ -109,8 +175,11 @@ if ('IntersectionObserver' in window) {
 
 <script>
 function search() {
+    applyFilters();
+    // 更新 URL 不带刷新
     const q = document.getElementById('search-input').value.trim();
-    window.location.href = '/album?q=' + encodeURIComponent(q);
+    const url = q ? '/album?q=' + encodeURIComponent(q) : '/album';
+    window.history.replaceState(null, '', url);
 }
 
 document.getElementById('search-input').addEventListener('keydown', function(e) {
@@ -119,6 +188,13 @@ document.getElementById('search-input').addEventListener('keydown', function(e) 
         search();
     }
 });
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.cs')) document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open'));
+});
+
+// 初始渲染筛选栏
+renderFilterBar();
 </script>
 
 {% endblock %}

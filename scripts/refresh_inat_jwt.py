@@ -23,7 +23,6 @@ from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
-PROXY = os.environ.get("INAT_PROXY", "")  # 透明代理环境下留空
 ENV_PATH = Path(os.environ.get("RELIC_ENV", r"Y:\Openclaw\workspace\.env"))
 JWT_OUTPUT_FILE = os.environ.get("JWT_OUTPUT_FILE", "")  # 设置后写文件而非 .env
 _default_state = Path(__file__).resolve().parent.parent / ".inat_state" / "state.json"
@@ -46,6 +45,18 @@ def load_env(path: Path) -> dict[str, str]:
         k, v = line.split("=", 1)
         out[k.strip()] = v.strip()
     return out
+
+
+def _get_proxy() -> str:
+    """INAT_PROXY: 优先 env 变量，其次 .env 文件。"""
+    val = os.environ.get("INAT_PROXY", "")
+    if val:
+        return val
+    env = load_env(ENV_PATH)
+    return env.get("INAT_PROXY", "")
+
+
+PROXY = _get_proxy()
 
 
 def update_env(path: Path, key: str, value: str) -> None:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -87,8 +88,10 @@ def score_image(image_path: str, locale: str = "zh-CN",
         "User-Agent": USER_AGENT,
         "Accept": "application/json",
     })
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("https_proxy") or os.environ.get("http_proxy")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({"https": proxy_url, "http": proxy_url} if proxy_url else {}))
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with opener.open(req, timeout=30) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         body_text = e.read().decode("utf-8", errors="replace")[:300]

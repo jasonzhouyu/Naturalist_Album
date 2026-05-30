@@ -4,7 +4,7 @@ from pathlib import Path
 
 from utils import (
     is_raw, is_image, generate_filename, create_thumbnail,
-    add_artifact, get_album_dir,
+    add_artifact, get_album_dir, make_relative_source,
 )
 from vision import recognize, generate_description
 from cache_manager import check_cache, put_cache
@@ -48,6 +48,7 @@ def process_photo(file_path: str, category: str, location: str = "", index_only:
         if preview is None:
             return {"error": f"无法解析 RAW 文件: {filename}"}
         working_path = preview
+        ext = ".jpg"  # RAW 提取的预览始终是 JPEG
 
     if not is_image(Path(working_path).name) and not is_raw(filename):
         if not is_image(filename):
@@ -103,7 +104,7 @@ def process_photo(file_path: str, category: str, location: str = "", index_only:
         "location": location,
     }
     if index_only:
-        artifact_fields["source_path"] = os.path.abspath(file_path)
+        artifact_fields["source_path"] = make_relative_source(os.path.abspath(file_path))
     artifact = add_artifact(category, artifact_fields)
 
     return artifact

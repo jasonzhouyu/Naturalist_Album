@@ -1,0 +1,14 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\lrimport]
+"URL Protocol"=""
+@="URL:Lightroom Import Protocol"
+
+[HKEY_CLASSES_ROOT\lrimport\shell]
+@=""
+
+[HKEY_CLASSES_ROOT\lrimport\shell\open]
+@=""
+
+[HKEY_CLASSES_ROOT\lrimport\shell\open\command]
+@="\"C:\\Users\\jason\\Projects\\relic-album\\scripts\\lightroom_import.bat\" \"%1\""

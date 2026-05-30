@@ -11,7 +11,7 @@ NAS_PASS = "Shanghai2025/"
 APP_DIR = "/home/pcwork/nature-album"
 LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_ENV = r"Y:\Openclaw\workspace\.env"
-DASHSCOPE_KEY = "sk-a2da2273a94f4f47b76c5c739f2efa1a"
+DASHSCOPE_KEY = ""  # 只在部署时从本地 .env 读取，不硬编码
 SUDO = f"echo '{NAS_PASS}' | sudo -S"
 
 EXCLUDE = {"__pycache__", "uploads", "deploy_nas.py", ".git", "migrate.py",
@@ -106,11 +106,12 @@ def main():
     print(f"       Uploaded (exit {exit_code})")
 
     local = read_local_env()
+    dashscope_key = local.get("DASHSCOPE_API_KEY", DASHSCOPE_KEY)
     plantnet_key = local.get("PLANTNET_API_KEY", "")
     inat_user = local.get("INATURALIST_USERNAME", "")
     inat_pass = local.get("INATURALIST_PASSWORD", "")
 
-    nas_env_lines = [f"DASHSCOPE_API_KEY={DASHSCOPE_KEY}"]
+    nas_env_lines = [f"DASHSCOPE_API_KEY={dashscope_key}"]
     if plantnet_key:
         nas_env_lines.append(f"PLANTNET_API_KEY={plantnet_key}")
     nas_env = "\\n".join(nas_env_lines)

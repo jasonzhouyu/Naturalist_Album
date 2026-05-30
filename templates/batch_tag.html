@@ -30,10 +30,10 @@
             <button onclick="selectAll()" class="outline small">全选</button>
             <button onclick="deselectAll()" class="outline small">全不选</button>
             <span class="toolbar-sep">|</span>
-            <button onclick="tagSelected('relic')" class="small tag-btn-relic">标记文物</button>
-            <button onclick="tagSelected('animal')" class="small tag-btn-animal">标记动物</button>
-            <button onclick="tagSelected('plant')" class="small tag-btn-plant">标记植物</button>
-            <button onclick="tagSelected(null)" class="outline small">跳过所选</button>
+            <button onclick="tagSelected('relic')" class="small tag-btn-relic" title="W — 标记文物">标记文物</button>
+            <button onclick="tagSelected('animal')" class="small tag-btn-animal" title="D — 标记动物">标记动物</button>
+            <button onclick="tagSelected('plant')" class="small tag-btn-plant" title="Z — 标记植物">标记植物</button>
+            <button onclick="tagSelected(null)" class="outline small" title="跳过所选">跳过所选</button>
         </div>
     </div>
 
@@ -46,6 +46,17 @@
             </label>
         </span>
         <button id="process-btn" onclick="startProcess()" class="process-btn">处理全部</button>
+    </div>
+
+    <div class="toolbar-row keyboard-hints">
+        <span>⌨</span>
+        <kbd>W</kbd> 文物
+        <kbd>D</kbd> 动物
+        <kbd>Z</kbd> 植物
+        <span class="toolbar-sep">|</span>
+        <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 切换卡片
+        <span class="toolbar-sep">|</span>
+        <span style="color:var(--text-muted);font-size:0.75rem">点击卡片也可聚焦</span>
     </div>
 </div>
 
@@ -81,6 +92,7 @@ function escapeHTML(s) {
 }
 
 const selected = new Set();
+let lastCheckedIndex = null;
 
 function cardHTML(f) {
     const catClass = f.category || 'none';
@@ -103,20 +115,41 @@ function cardHTML(f) {
                 </div>
                 <input id="loc-input-${f.index}" type="text" class="card-loc-input" value="${safeLoc}" placeholder="地点" onchange="setOneLocation(${f.index}, this.value)">
                 <div class="batch-card-actions">
-                    <button onclick="tagOne(${f.index}, 'relic')" class="mini tag-btn-relic" title="文物">文</button>
-                    <button onclick="tagOne(${f.index}, 'animal')" class="mini tag-btn-animal" title="动物">动</button>
-                    <button onclick="tagOne(${f.index}, 'plant')" class="mini tag-btn-plant" title="植物">植</button>
+                    <button onclick="tagOne(${f.index}, 'relic')" class="mini tag-btn-relic" title="快捷键 W 标记文物">文</button>
+                    <button onclick="tagOne(${f.index}, 'animal')" class="mini tag-btn-animal" title="快捷键 D 标记动物">动</button>
+                    <button onclick="tagOne(${f.index}, 'plant')" class="mini tag-btn-plant" title="快捷键 Z 标记植物">植</button>
                     <button onclick="tagOne(${f.index}, null)" class="mini outline" title="跳过">跳</button>
                 </div>
                 <label class="batch-card-check">
-                    <input type="checkbox" class="card-checkbox" data-index="${f.index}" ${checked} onchange="onCheckboxChange(${f.index}, this.checked)">
+                    <input type="checkbox" class="card-checkbox" data-index="${f.index}" ${checked} onclick="onCheckboxClick(event, ${f.index})">
                 </label>
             </div>
         </div>`;
 }
 
-function onCheckboxChange(index, isChecked) {
-    if (isChecked) selected.add(index); else selected.delete(index);
+function onCheckboxClick(event, index) {
+    const isChecked = event.target.checked;
+
+    if (event.shiftKey && lastCheckedIndex !== null && lastCheckedIndex !== index) {
+        // 找两个端点在 files 数组里的位置
+        const indices = files.map(f => f.index);
+        const pos1 = indices.indexOf(lastCheckedIndex);
+        const pos2 = indices.indexOf(index);
+        if (pos1 >= 0 && pos2 >= 0) {
+            const from = Math.min(pos1, pos2);
+            const to   = Math.max(pos1, pos2);
+            for (let i = from; i <= to; i++) {
+                const idx = indices[i];
+                if (isChecked) selected.add(idx); else selected.delete(idx);
+                const cb = document.querySelector(`.card-checkbox[data-index="${idx}"]`);
+                if (cb) cb.checked = isChecked;
+            }
+        }
+    } else {
+        if (isChecked) selected.add(index); else selected.delete(index);
+        lastCheckedIndex = index;
+    }
+
     updateCounter();
 }
 
@@ -159,11 +192,13 @@ function updateCounter() {
 function selectAll() {
     files.forEach(f => selected.add(f.index));
     document.querySelectorAll('.card-checkbox').forEach(cb => { cb.checked = true; });
+    lastCheckedIndex = null;
     updateCounter();
 }
 
 function deselectAll() {
     selected.clear();
+    lastCheckedIndex = null;
     document.querySelectorAll('.card-checkbox').forEach(cb => { cb.checked = false; });
     updateCounter();
 }
@@ -345,6 +380,85 @@ function closeProcess() {
     document.getElementById('process-overlay').style.display = 'none';
 }
 
+/* ===== 键盘快捷键导航 ===== */
+let currentFocus = -1;
+
+function getGridColumns() {
+    const cards = document.querySelectorAll('.batch-card');
+    if (cards.length < 2) return 1;
+    const first = cards[0].getBoundingClientRect();
+    // 找到第二行第一个卡片
+    for (let i = 1; i < cards.length; i++) {
+        const rect = cards[i].getBoundingClientRect();
+        if (rect.top > first.top + first.height / 2) return i;
+    }
+    return cards.length;
+}
+
+function scrollToCard(card) {
+    const rect = card.getBoundingClientRect();
+    const toolbar = document.querySelector('.batch-toolbar');
+    const toolbarBottom = toolbar ? toolbar.getBoundingClientRect().bottom : 56;
+    if (rect.top < toolbarBottom || rect.bottom > window.innerHeight - 40) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function focusCard(index) {
+    document.querySelectorAll('.batch-card.focused').forEach(el => el.classList.remove('focused'));
+    if (index < 0 || index >= files.length) { currentFocus = -1; return; }
+    currentFocus = index;
+
+    const card = document.getElementById(`card-${files[index].index}`);
+    if (!card) {
+        // 卡片未渲染，加载更多后重试
+        while (renderedCount <= index && !loadingMore) loadMore();
+        if (!document.getElementById(`card-${files[index].index}`)) {
+            setTimeout(() => focusCard(index), 80);
+        }
+        return;
+    }
+    card.classList.add('focused');
+    scrollToCard(card);
+}
+
+function moveFocus(delta) {
+    const n = Math.max(0, Math.min(files.length - 1, currentFocus + delta));
+    if (n !== currentFocus) focusCard(n);
+}
+
+document.addEventListener('keydown', (e) => {
+    // 输入框中不拦截
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    switch (e.key) {
+        case 'ArrowRight': e.preventDefault(); moveFocus(1); break;
+        case 'ArrowDown':  e.preventDefault(); moveFocus(getGridColumns()); break;
+        case 'ArrowLeft':  e.preventDefault(); moveFocus(-1); break;
+        case 'ArrowUp':    e.preventDefault(); moveFocus(-getGridColumns()); break;
+
+        case 'w': case 'W':
+            if (currentFocus >= 0) tagOne(files[currentFocus].index, 'relic');
+            break;
+        case 'd': case 'D':
+            if (currentFocus >= 0) tagOne(files[currentFocus].index, 'animal');
+            break;
+        case 'z': case 'Z':
+            if (currentFocus >= 0) tagOne(files[currentFocus].index, 'plant');
+            break;
+    }
+});
+
+// 点击卡片时聚焦
+document.addEventListener('click', (e) => {
+    const card = e.target.closest('.batch-card');
+    if (card) {
+        const idx = parseInt(card.dataset.index);
+        const fileIdx = files.findIndex(f => f.index === idx);
+        if (fileIdx >= 0) focusCard(fileIdx);
+    }
+});
+
 // 初始化省/市输入框（从 session.default_location 拆出）
 const _defaultLoc = {{ session.default_location | tojson | safe }} || '';
 const [_initProv, _initCity] = splitLocation(_defaultLoc);
@@ -354,6 +468,8 @@ document.getElementById('city-input').value = _initCity;
 // 初始渲染：先吐 PAGE_SIZE 张，超出部分滚动到底自动追加
 appendCards(files.slice(0, PAGE_SIZE));
 updateCounter();
+// 自动聚焦第一张
+setTimeout(() => focusCard(0), 100);
 
 if ('IntersectionObserver' in window) {
     const sentinel = document.getElementById('batch-load-sentinel');

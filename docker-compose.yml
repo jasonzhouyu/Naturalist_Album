@@ -25,6 +25,7 @@ services:
     restart: unless-stopped
 
   inat-jwt-refresher:
+    profiles: ["inat"]   # 默认不启动，需要时: docker compose --profile inat up -d
     build:
       context: .
       dockerfile: Dockerfile.inat-refresh

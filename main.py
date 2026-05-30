@@ -18,7 +18,8 @@ print(f"[startup] log file: {log_setup.LOG_PATH}")
 CATEGORIES = ["relic", "animal", "plant"]
 
 from utils import (
-    load_metadata, add_artifact, delete_artifact, update_artifact,
+    load_metadata, add_artifact, delete_artifact, update_artifact, save_metadata,
+    resolve_source_path, make_relative_source,
     ALLOWED_EXTENSIONS, CATEGORIES,
 )
 from processor import process_photo
@@ -79,13 +80,24 @@ async def settings_page(request: Request):
 @app.post("/settings")
 async def settings_save(request: Request):
     body = await request.json()
-    storage_path = body.get("storage_path", "").strip()
-    if not storage_path:
-        return JSONResponse({"error": "请输入存储路径"}, status_code=400)
-    p = Path(storage_path)
-    if not p.is_absolute():
-        return JSONResponse({"error": "请输入绝对路径"}, status_code=400)
-    save_settings({"storage_path": str(p)})
+    current = load_settings()
+
+    if "storage_path" in body:
+        storage_path = body["storage_path"].strip()
+        if not storage_path:
+            return JSONResponse({"error": "请输入存储路径"}, status_code=400)
+        p = Path(storage_path)
+        if not p.is_absolute():
+            return JSONResponse({"error": "请输入绝对路径"}, status_code=400)
+        current["storage_path"] = str(p)
+
+    if "photos_root" in body:
+        photos_root = body["photos_root"].strip()
+        if not photos_root:
+            return JSONResponse({"error": "请输入照片根目录"}, status_code=400)
+        current["photos_root"] = photos_root
+
+    save_settings(current)
     return JSONResponse({"ok": True})
 
 
@@ -166,10 +178,33 @@ async def batch_scan_page(request: Request):
     return templates.TemplateResponse(request, "batch_scan.html", {})
 
 
+def _translate_user_path(path: str) -> str:
+    """Windows UNC / 盘符路径 → 容器内可访问的 Linux 路径。
+    仅在 Linux 容器里生效；Windows 本机运行时原样返回。
+    """
+    import platform
+    if platform.system() == "Windows":
+        return path
+    p = path.strip()
+    # \\DX4600-HOMENAS\personal_folder\Photos\... → /photos/...
+    # \\192.168.31.233\personal_folder\Photos\... → /photos/...
+    import re
+    m = re.match(r"^\\\\[^\\]+\\[^\\]+\\Photos(\\.*)?$", p, re.IGNORECASE)
+    if m:
+        rest = (m.group(1) or "").replace("\\", "/")
+        return f"/photos{rest}"
+    # \\host\share\... → /photos/... (宽松匹配)
+    m2 = re.match(r"^\\\\[^\\]+\\[^\\]+(\\.*)?$", p)
+    if m2:
+        rest = (m2.group(1) or "").replace("\\", "/")
+        return f"/photos{rest}"
+    return p
+
+
 @app.post("/batch/scan")
 async def batch_scan(request: Request):
     body = await request.json()
-    directory = body.get("directory", "").strip()
+    directory = _translate_user_path(body.get("directory", "").strip())
     if not directory:
         return JSONResponse({"error": "请输入目录路径"}, status_code=400)
     try:
@@ -186,7 +221,20 @@ async def browse_directory(request: Request):
     path = body.get("path", "").strip()
     t0 = time.perf_counter()
 
+    import platform
+    path = _translate_user_path(path)
+
     if not path:
+        elapsed = (time.perf_counter() - t0) * 1000
+        if platform.system() != "Windows":
+            # Docker 容器：直接列出 /photos 根目录
+            photos_root = Path("/photos")
+            if photos_root.is_dir():
+                items = [{"name": p.name, "path": str(p), "type": "dir"}
+                         for p in sorted(photos_root.iterdir()) if p.is_dir() and not p.name.startswith(".")]
+                return JSONResponse({"items": items, "current": "/photos", "scan_ms": int(elapsed)})
+            return JSONResponse({"items": [], "current": "/", "scan_ms": int(elapsed)})
+
         import string
         drives = []
         for letter in string.ascii_uppercase:
@@ -202,7 +250,6 @@ async def browse_directory(request: Request):
             {"name": "\\\\DX4600-HOMENAS", "path": "\\\\DX4600-HOMENAS", "type": "network"},
             {"name": "\\\\192.168.31.233", "path": "\\\\192.168.31.233", "type": "network"},
         ]
-        elapsed = (time.perf_counter() - t0) * 1000
         print(f"[browse-dir] roots: {len(drives)} drives in {elapsed:.0f}ms")
         return JSONResponse({
             "items": drives + network_paths, "current": "", "scan_ms": int(elapsed),
@@ -389,7 +436,7 @@ async def serve_batch_preview(session_id: str, index: int, full: int = 0):
         print(f"[batch-preview] {session_id}/{index}: bad index")
         return HTMLResponse("File not found", status_code=404)
 
-    source = file_info["path"]
+    source = resolve_source_path(file_info["path"])
     name = Path(source).name
     if full:
         return FileResponse(source)
@@ -509,6 +556,151 @@ async def revoke_share_link(share_id: str):
     return JSONResponse({"ok": True})
 
 
+@app.get("/api/dongniao/status")
+async def dongniao_status():
+    """检测当前 webkey 是否有效；无效时返回新的 challenge。"""
+    import base64, urllib.request as ur
+    import dongniao
+
+    try:
+        webkey = dongniao._get_webkey()
+    except dongniao.DongniaoError:
+        webkey = ""
+
+    # 用 thumbs/animal 里的第一张图做有效性探测
+    def _probe_image() -> bytes:
+        thumbs = BASE_DIR / "thumbs" / "animal"
+        for p in thumbs.glob("*.jpg"):
+            return p.read_bytes()
+        return b""
+
+    valid = False
+    if webkey:
+        try:
+            probe = _probe_image()
+            if probe:
+                res = dongniao._post(probe, webkey)
+                valid = not (res and len(res[0]) >= 2 and res[0][1] == "Challenge")
+        except Exception:
+            valid = False
+
+    if valid:
+        return JSONResponse({"status": "valid"})
+
+    # 获取新 challenge（不带 webkey cookie，服务端会返回 Challenge）
+    try:
+        probe = _probe_image()
+        boundary = "----DongniaoStatus"
+        body = (
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"t.jpg\"\r\n"
+            f"Content-Type: image/jpeg\r\n\r\n"
+        ).encode() + probe + (
+            f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"async\"\r\n\r\n0\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"sc\"\r\n\r\nweb\r\n"
+            f"--{boundary}--\r\n"
+        ).encode()
+        req = ur.Request("https://dongniao.net/niaodian2", data=body, method="POST")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("Referer", "https://dongniao.net/photoid.html")
+        req.add_header("User-Agent", "Mozilla/5.0")
+        with ur.urlopen(req, timeout=15) as r:
+            ch = json.loads(r.read())
+        if ch and len(ch[0]) >= 3 and ch[0][1] == "Challenge":
+            code, pending_key = str(ch[0][0]), str(ch[0][2])
+        else:
+            # webkey 已在探测中通过，但探测时用了空 webkey 却返回结果
+            return JSONResponse({"status": "valid"})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=502)
+
+    qr_b64 = ""
+    try:
+        with ur.urlopen("https://dongniao.net/images/dongniao_430.jpg", timeout=8) as r:
+            qr_b64 = base64.b64encode(r.read()).decode()
+    except Exception:
+        pass
+
+    return JSONResponse({
+        "status":      "invalid",
+        "code":        code,
+        "pending_key": pending_key,
+        "qr_b64":      qr_b64,
+    })
+
+
+@app.post("/api/dongniao/verify")
+async def dongniao_verify(request: Request):
+    """测试 pending_key 是否通过验证，成功后写入 .env。"""
+    import dongniao
+    body = await request.json()
+    pending_key = body.get("pending_key", "")
+    if not pending_key:
+        return JSONResponse({"ok": False, "message": "缺少 pending_key"})
+
+    probe = b""
+    for p in (BASE_DIR / "thumbs" / "animal").glob("*.jpg"):
+        probe = p.read_bytes(); break
+
+    try:
+        res = dongniao._post(probe, pending_key)
+        ok = not (res and len(res[0]) >= 2 and res[0][1] == "Challenge")
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": str(e)})
+
+    if ok:
+        import re
+        env_path = BASE_DIR / ".env"
+        content = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        pattern = re.compile(r"^DONGNIAO_WEBKEY\s*=.*$", re.MULTILINE)
+        new_line = f"DONGNIAO_WEBKEY={pending_key}"
+        content = pattern.sub(new_line, content) if pattern.search(content) else (
+            content + ("" if content.endswith("\n") else "\n") + new_line + "\n"
+        )
+        env_path.write_text(content, encoding="utf-8")
+        # 让 secrets_loader 下次重新加载
+        import secrets_loader
+        secrets_loader._dotenv_cache = None
+
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/reidentify/{category}/{artifact_id}")
+async def reidentify(
+    category: str,
+    artifact_id: str,
+    crop: UploadFile = File(...),
+    apply: str = "false",
+):
+    """接收裁剪图片，调懂鸟 API 返回 Top5；apply=true 时把 Top1 写入 metadata。"""
+    if not validate_category(category):
+        return JSONResponse({"error": "不存在的品类"}, status_code=404)
+
+    import dongniao
+    try:
+        image_bytes = await crop.read()
+        results = dongniao.identify(image_bytes)
+    except dongniao.DongniaoAuthRequired as e:
+        return JSONResponse({"error": "auth_required", "message": str(e)}, status_code=401)
+    except dongniao.DongniaoError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    if apply.lower() == "true" and results:
+        top = results[0]
+        data = load_metadata(category)
+        artifact = next((a for a in data["artifacts"] if a["id"] == artifact_id), None)
+        if artifact:
+            artifact["chinese_name"] = top["chinese_name"]
+            artifact["scientific_name"] = top["scientific_name"]
+            if top.get("order"):
+                artifact["order"] = top["order"]
+            if top.get("family"):
+                artifact["family"] = top["family"]
+            artifact["confidence"] = f"懂鸟 {top['score']}%"
+            save_metadata(category, data)
+
+    return JSONResponse({"results": results})
+
+
 # === 品类相册 ===
 
 @app.get("/{category}", response_class=HTMLResponse)
@@ -544,7 +736,7 @@ async def serve_photo(category: str, artifact_id: str):
     artifact = next((a for a in data["artifacts"] if a["id"] == artifact_id), None)
     if not artifact:
         return HTMLResponse("记录不存在", status_code=404)
-    source_path = artifact.get("source_path")
+    source_path = resolve_source_path(artifact.get("source_path") or "")
     if not source_path or not os.path.isfile(source_path):
         # fallback to album dir
         album_path = get_album_dir(category) / artifact["filename"]

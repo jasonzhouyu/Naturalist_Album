@@ -2,9 +2,17 @@
 {% block title %}{{ label }}相册{% endblock %}
 {% block content %}
 
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
-    <h1 style="margin:0">{{ label }}相册</h1>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+    <h1 style="margin:0">{{ label }}相册 <small id="result-count" style="font-size:0.5em;color:var(--text-muted);font-weight:400"></small></h1>
     <a href="/upload/{{ category }}" class="btn secondary">上传照片</a>
+</div>
+
+<div class="album-controls">
+    <div class="search-bar">
+        <input id="search-input" type="search" placeholder="搜索名称、学名、分布地..." oninput="applyFilters()">
+        <button onclick="applyFilters()">搜索</button>
+    </div>
+    <div class="filter-bar" id="filter-bar"></div>
 </div>
 
 {% if artifacts %}
@@ -17,55 +25,173 @@ const ALBUM_CATEGORY = {{ category | tojson }};
 const ALBUM_PAGE_SIZE = 60;
 const artifacts = {{ artifacts | tojson | safe }};
 let rendered = 0;
+let filteredArtifacts = artifacts;
+let searchQuery = '';
 
-function escapeHTML(s) {
-    if (s == null) return '';
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+const State = {};
+
+const CFG = {
+    relic: { levels: ['dynasty'], labels: {dynasty:'朝代'} },
+    animal: { levels: ['class','order','family'], labels: {class:'纲', order:'目', family:'科'} },
+    plant: { levels: ['class','order','family'], labels: {class:'纲', order:'目', family:'科'} },
+};
+const L = CFG[ALBUM_CATEGORY].levels;
+const LL = CFG[ALBUM_CATEGORY].labels;
+
+// 层级树
+const root = { _c: 0, _k: {} };
+artifacts.forEach(a => {
+    let n = root;
+    L.forEach(f => {
+        const v = a[f] || '';
+        if (v && v !== '未知') {
+            if (!n._k[v]) n._k[v] = { _c: 0, _k: {} };
+            n._k[v]._c++; n = n._k[v];
+        }
+    });
+});
+
+function esc(s) { return s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function cardHTML(a) {
-    const name = escapeHTML(a.name || a.chinese_name || '未知');
-    const filename = encodeURIComponent(a.filename);
-    let metaLine;
+    const name = esc(a.name || a.chinese_name || '未知');
+    const fn = encodeURIComponent(a.filename.replace(/\.[^.]+$/, '') + '.jpg');
+    let m;
     if (ALBUM_CATEGORY === 'relic') {
-        const dynasty = a.dynasty ? escapeHTML(a.dynasty) : '';
-        const material = a.material ? ' · ' + escapeHTML(a.material) : '';
-        metaLine = `<p>${dynasty}${material}</p>`;
+        const d = a.dynasty && a.dynasty !== '未知' ? esc(a.dynasty) : '';
+        const mt = a.material && a.material !== '未知' ? ' · ' + esc(a.material) : '';
+        m = `<p>${d}${mt}</p>`;
     } else {
-        const sci = a.scientific_name ? `<em>${escapeHTML(a.scientific_name)}</em>` : '';
-        metaLine = `<p>${sci}</p>`;
+        const s = a.scientific_name && a.scientific_name !== '未知' ? `<em>${esc(a.scientific_name)}</em>` : '';
+        const f = a.family && a.family !== '未知' ? ' · ' + esc(a.family) : '';
+        m = `<p>${s}${f}</p>`;
     }
-    return `
-        <a href="/${ALBUM_CATEGORY}/${a.id}" class="card-link">
-            <div class="album-card">
-                <img src="/thumbs/${ALBUM_CATEGORY}/${filename}" alt="${name}" loading="lazy" decoding="async">
-                <div class="album-info">
-                    <h3>${name}</h3>
-                    ${metaLine}
-                </div>
+    return `<a href="/${ALBUM_CATEGORY}/${a.id}" class="card-link"><div class="album-card"><img src="/thumbs/${ALBUM_CATEGORY}/${fn}" alt="${name}" loading="lazy"><div class="album-info"><h3>${name}</h3>${m}</div></div></a>`;
+}
+
+// ---- 级联选择器 ----
+function renderBar() {
+    const bar = document.getElementById('filter-bar');
+    if (!bar) return;
+    const active = L.filter(f => State[f]).map(f => `${State[f]}`);
+    const path = active.length ? active.join(' / ') : '';
+    const hasVal = !!path;
+    bar.innerHTML = `
+        <div class="cs">
+            <div class="cs-trig" tabindex="0" onclick="csToggle()" onkeydown="if(event.key==='Enter')csToggle()">
+                <span class="cs-txt">${path || '全部'}</span>
+                <span class="cs-ind">${hasVal ? '✕' : '▾'}</span>
             </div>
-        </a>`;
+            <div class="cs-pnl">
+                <div class="cs-cols" id="cs-cols"></div>
+            </div>
+        </div>
+        ${hasVal ? `<span class="cs-clr" onclick="csClear()">清除筛选</span>` : ''}
+    `;
+}
+
+function csToggle() {
+    const pnl = document.querySelector('.cs-pnl');
+    const open = pnl.classList.contains('open');
+    document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open'));
+    if (!open) { pnl.classList.add('open'); csRenderCol(0); }
+}
+
+function csRenderCol(idx) {
+    const cols = document.getElementById('cs-cols');
+    // 移除 idx 及之后的列
+    while (cols.children.length > idx) cols.removeChild(cols.lastChild);
+
+    // 定位当前节点
+    let node = root;
+    for (let i = 0; i < idx; i++) { const v = State[L[i]]; if (v && node._k[v]) node = node._k[v]; else break; }
+
+    const field = L[idx];
+    const label = LL[field];
+    const kids = Object.entries(node._k).filter(([k]) => k).sort((a, b) => b[1]._c - a[1]._c);
+    const isLast = idx === L.length - 1;
+
+    const col = document.createElement('div');
+    col.className = 'cs-col';
+
+    // 搜索
+    const inp = document.createElement('input');
+    inp.className = 'cs-src';
+    inp.type = 'text';
+    inp.placeholder = '搜索...';
+    inp.oninput = function() { const q = this.value.trim().toLowerCase(); col.querySelectorAll('.cs-opt').forEach(o => { o.style.display = (!q || o.textContent.toLowerCase().includes(q)) ? '' : 'none'; }); };
+    col.appendChild(inp);
+
+    // 选项列表
+    const lst = document.createElement('div');
+    lst.className = 'cs-lst';
+
+    // 不限
+    const anyEl = document.createElement('div');
+    anyEl.className = 'cs-opt' + (!State[field] ? ' on' : '');
+    anyEl.innerHTML = '不限 <small>' + node._c + '</small>';
+    anyEl.onclick = function() {
+        State[field] = ''; for (let i = idx + 1; i < L.length; i++) State[L[i]] = '';
+        document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open'));
+        renderBar(); applyFilters();
+    };
+    lst.appendChild(anyEl);
+
+    kids.forEach(([v, child]) => {
+        const el = document.createElement('div');
+        el.className = 'cs-opt' + (State[field] === v ? ' on' : '');
+        el.innerHTML = esc(v) + ' <small>' + child._c + '</small>';
+        if (!isLast && Object.keys(child._k).filter(k => k).length > 0) {
+            const arr = document.createElement('span');
+            arr.className = 'cs-arr'; arr.textContent = '›';
+            el.appendChild(arr);
+        }
+        el.onclick = function(e) {
+            e.stopPropagation();
+            State[field] = v || ''; for (let i = idx + 1; i < L.length; i++) State[L[i]] = '';
+            if (isLast) { document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open')); renderBar(); applyFilters(); }
+            else csRenderCol(idx + 1);
+        };
+        lst.appendChild(el);
+    });
+
+    col.appendChild(lst);
+    cols.appendChild(col);
+
+    // 聚焦搜索框
+    setTimeout(() => inp.focus(), 50);
+}
+
+function csClear() { L.forEach(f => State[f] = ''); document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open')); renderBar(); applyFilters(); }
+
+// 点击外部关闭
+document.addEventListener('click', e => { if (!e.target.closest('.cs')) document.querySelectorAll('.cs-pnl.open').forEach(p => p.classList.remove('open')); });
+
+function matchesSearch(a, q) { if (!q) return true; return Object.values(a).filter(v => typeof v === 'string').join(' ').toLowerCase().includes(q.toLowerCase()); }
+function matchesFilter(a) { for (const f of L) { const v = State[f]; if (v) { const av = a[f] || ''; if (av.toLowerCase() !== v.toLowerCase()) return false; } } return true; }
+
+function applyFilters() {
+    searchQuery = document.getElementById('search-input').value.trim();
+    filteredArtifacts = artifacts.filter(a => matchesSearch(a, searchQuery) && matchesFilter(a));
+    document.getElementById('album-grid').innerHTML = ''; rendered = 0;
+    document.getElementById('album-loaded-info').textContent = '';
+    const hf = searchQuery || L.some(f => State[f]);
+    document.getElementById('result-count').textContent = hf ? ` — ${filteredArtifacts.length} 张` : '';
+    loadMoreAlbum();
 }
 
 function loadMoreAlbum() {
-    if (rendered >= artifacts.length) return;
-    const slice = artifacts.slice(rendered, rendered + ALBUM_PAGE_SIZE);
-    document.getElementById('album-grid').insertAdjacentHTML('beforeend', slice.map(cardHTML).join(''));
-    rendered += slice.length;
-    document.getElementById('album-loaded-info').textContent =
-        `已加载 ${rendered} / ${artifacts.length}`;
+    if (rendered >= filteredArtifacts.length) return;
+    const s = filteredArtifacts.slice(rendered, rendered + ALBUM_PAGE_SIZE);
+    document.getElementById('album-grid').insertAdjacentHTML('beforeend', s.map(cardHTML).join(''));
+    rendered += s.length;
+    document.getElementById('album-loaded-info').textContent = `已加载 ${rendered} / ${filteredArtifacts.length}`;
 }
 
-loadMoreAlbum();
+document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyFilters(); } });
 
-if ('IntersectionObserver' in window) {
-    const io = new IntersectionObserver(entries => {
-        for (const e of entries) {
-            if (e.isIntersecting) loadMoreAlbum();
-        }
-    }, {rootMargin: '800px 0px'});
-    io.observe(document.getElementById('album-load-sentinel'));
-}
+filteredArtifacts = artifacts; renderBar(); loadMoreAlbum();
+if ('IntersectionObserver' in window) new IntersectionObserver(e => { for (const x of e) { if (x.isIntersecting) loadMoreAlbum(); } }, {rootMargin:'800px 0px'}).observe(document.getElementById('album-load-sentinel'));
 </script>
 {% else %}
 <div class="empty-state">
@@ -73,5 +199,4 @@ if ('IntersectionObserver' in window) {
     <a href="/upload/{{ category }}" class="btn">上传第一张照片</a>
 </div>
 {% endif %}
-
 {% endblock %}

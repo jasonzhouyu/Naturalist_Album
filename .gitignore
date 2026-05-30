@@ -20,6 +20,7 @@ relic-album.log
 shares.json
 *.bak
 *.bak.json
+*.bak_migrate
 settings.json
 .env
 uploads/sessions/

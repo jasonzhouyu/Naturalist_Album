@@ -11,11 +11,7 @@
 <div class="detail-layout">
     <div class="detail-grid">
         <div class="detail-image">
-            {% if artifact.source_path %}
-            <img src="/photo/{{ category }}/{{ artifact.id }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
-            {% else %}
-            <img src="/album/{{ artifact.filename }}" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}">
-            {% endif %}
+            <img src="/thumbs/{{ category }}/{{ artifact.filename.rsplit('.', 1)[0] }}.jpg" alt="{{ artifact.get('name', artifact.get('chinese_name', '')) }}" onerror="this.src='/photo/{{ category }}/{{ artifact.id }}'">
         </div>
 
         <div class="detail-info">
@@ -102,10 +98,17 @@
 
             <div class="detail-actions">
                 <button onclick="toggleEdit()" class="secondary">编辑信息</button>
+                {% if category in ['animal', 'plant'] %}
+                <button onclick="openCropPanel()" class="secondary" id="crop-btn">框选重识别</button>
+                {% endif %}
+                {% if artifact.source_path %}
+                <button onclick="openInLightroom('{{ artifact.source_path }}')" class="secondary">在 Lightroom 中打开</button>
+                {% endif %}
                 <button onclick="createShare('{{ category }}', '{{ artifact.id }}')" class="secondary">生成分享链接</button>
                 <button onclick="deleteArtifact('{{ category }}', '{{ artifact.id }}')" class="contrast">删除</button>
             </div>
             <div id="share-result" style="margin-top:0.5rem"></div>
+            <div id="lr-result" style="margin-top:0.5rem"></div>
         </div>
     </div>
 
@@ -201,6 +204,13 @@ function saveEdit(event, category, id) {
         });
 }
 
+function openInLightroom(sourcePath) {
+    // UNC: \\DX4600-HOMENAS\... → lrimport://DX4600-HOMENAS/...
+    const url = 'lrimport://' + sourcePath.replace(/^\\\\/, '').replace(/\\/g, '/');
+    document.getElementById('lr-result').innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">正在打开 Lightroom…</span>';
+    window.location.href = url;
+}
+
 function deleteArtifact(category, id) {
     if (!confirm('确定要删除这条记录吗？')) return;
     fetch(`/${category}/${id}`, { method: 'DELETE' })
@@ -210,6 +220,171 @@ function deleteArtifact(category, id) {
             else { alert('删除失败: ' + result.error); }
         });
 }
+
+// ===== 框选重识别 =====
+let _cropImg = null, _canvas = null, _ctx = null;
+let _startX, _startY, _endX, _endY, _dragging = false;
+
+function openCropPanel() {
+    document.getElementById('crop-overlay').style.display = 'flex';
+    const img = document.querySelector('.detail-image img');
+    _cropImg = img;
+    initCanvas(img);
+}
+
+function closeCropPanel() {
+    document.getElementById('crop-overlay').style.display = 'none';
+    document.getElementById('reidentify-results').innerHTML = '';
+    document.getElementById('crop-hint').textContent = '拖动鼠标框选鸟体区域';
+}
+
+function initCanvas(img) {
+    _canvas = document.getElementById('crop-canvas');
+    _ctx = _canvas.getContext('2d');
+    const naturalW = img.naturalWidth, naturalH = img.naturalHeight;
+    const maxW = Math.min(window.innerWidth * 0.9, 900);
+    const maxH = window.innerHeight * 0.6;
+    const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
+    _canvas.width  = Math.round(naturalW * scale);
+    _canvas.height = Math.round(naturalH * scale);
+    _canvas._scaleX = naturalW / _canvas.width;
+    _canvas._scaleY = naturalH / _canvas.height;
+    _ctx.drawImage(img, 0, 0, _canvas.width, _canvas.height);
+    _startX = _startY = _endX = _endY = 0;
+}
+
+function getPos(e) {
+    const r = _canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+}
+
+function onDown(e) {
+    e.preventDefault();
+    const p = getPos(e); _startX = _endX = p.x; _startY = _endY = p.y; _dragging = true;
+}
+function onMove(e) {
+    if (!_dragging) return; e.preventDefault();
+    const p = getPos(e); _endX = p.x; _endY = p.y; drawRect();
+}
+function onUp(e) {
+    if (!_dragging) return; _dragging = false;
+    document.getElementById('crop-hint').textContent = '选区已确定，点击「识别」提交';
+    document.getElementById('do-identify-btn').disabled = false;
+}
+
+function drawRect() {
+    _ctx.drawImage(_cropImg, 0, 0, _canvas.width, _canvas.height);
+    const x = Math.min(_startX, _endX), y = Math.min(_startY, _endY);
+    const w = Math.abs(_endX - _startX), h = Math.abs(_endY - _startY);
+    _ctx.save();
+    _ctx.strokeStyle = '#1976d2'; _ctx.lineWidth = 2;
+    _ctx.fillStyle = 'rgba(25,118,210,0.12)';
+    _ctx.fillRect(x, y, w, h);
+    _ctx.strokeRect(x, y, w, h);
+    _ctx.restore();
+}
+
+async function doIdentify() {
+    const x = Math.min(_startX, _endX), y = Math.min(_startY, _endY);
+    const w = Math.abs(_endX - _startX), h = Math.abs(_endY - _startY);
+    if (w < 10 || h < 10) { alert('请先框选一个区域'); return; }
+
+    // 裁剪到真实像素坐标
+    const rx = Math.round(x * _canvas._scaleX), ry = Math.round(y * _canvas._scaleY);
+    const rw = Math.round(w * _canvas._scaleX), rh = Math.round(h * _canvas._scaleY);
+    const offscreen = document.createElement('canvas');
+    offscreen.width = rw; offscreen.height = rh;
+    offscreen.getContext('2d').drawImage(_cropImg, rx, ry, rw, rh, 0, 0, rw, rh);
+
+    const resultsDiv = document.getElementById('reidentify-results');
+    resultsDiv.innerHTML = '<p style="color:#888">⏳ 识别中…</p>';
+    document.getElementById('do-identify-btn').disabled = true;
+
+    offscreen.toBlob(async blob => {
+        const form = new FormData();
+        form.append('crop', blob, 'crop.jpg');
+        try {
+            const resp = await fetch(`/api/reidentify/{{ category }}/{{ artifact.id }}`, {
+                method: 'POST', body: form
+            });
+            const data = await resp.json();
+            if (data.error === 'auth_required') {
+                resultsDiv.innerHTML = `<p style="color:#c62828">⚠️ webkey 已失效，请在服务器上运行 <code>python scripts/dongniao_auth.py</code> 重新验证。</p>`;
+                return;
+            }
+            if (data.error) { resultsDiv.innerHTML = `<p style="color:#c62828">错误: ${data.error}</p>`; return; }
+            renderResults(data.results);
+        } catch(e) {
+            resultsDiv.innerHTML = `<p style="color:#c62828">请求失败: ${e.message}</p>`;
+        }
+        document.getElementById('do-identify-btn').disabled = false;
+    }, 'image/jpeg', 0.9);
+}
+
+function renderResults(results) {
+    if (!results || !results.length) {
+        document.getElementById('reidentify-results').innerHTML = '<p style="color:#888">未识别到结果</p>';
+        return;
+    }
+    const html = results.map((r, i) => `
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #eee">
+            <div style="min-width:52px;font-size:1.1em;font-weight:700;color:${i===0?'#1976d2':'#888'}">${r.score}%</div>
+            <div style="flex:1">
+                <div style="font-weight:600">${r.chinese_name}</div>
+                <div style="font-size:.82em;color:#888"><em>${r.scientific_name}</em> · ${r.english_name}</div>
+            </div>
+            <button onclick="applyResult(${JSON.stringify(r).replace(/"/g,'&quot;')})"
+                    style="padding:4px 12px;font-size:.85em;background:${i===0?'#1976d2':'#eee'};color:${i===0?'#fff':'#333'};border:none;border-radius:6px;cursor:pointer">
+                应用
+            </button>
+        </div>`).join('');
+    document.getElementById('reidentify-results').innerHTML = html;
+}
+
+async function applyResult(r) {
+    const form = new FormData();
+    form.append('crop', new Blob([]), 'crop.jpg');
+    // 直接用 edit 接口更新字段
+    const editForm = new FormData();
+    editForm.append('chinese_name', r.chinese_name);
+    editForm.append('scientific_name', r.scientific_name);
+    if (r.order)  editForm.append('order', r.order);
+    if (r.family) editForm.append('family', r.family);
+    editForm.append('confidence', `懂鸟 ${r.score}%`);
+    const resp = await fetch(`/{{ category }}/{{ artifact.id }}/edit`, {method:'POST', body:editForm});
+    const data = await resp.json();
+    if (data.ok) { closeCropPanel(); location.reload(); }
+    else alert('应用失败: ' + (data.error || '未知错误'));
+}
 </script>
+
+<!-- 框选重识别浮层 -->
+{% if category in ['animal', 'plant'] %}
+<div id="crop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;flex-direction:column;align-items:center;justify-content:center;gap:12px">
+    <div style="background:#fff;border-radius:12px;padding:16px;max-width:95vw;width:fit-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-weight:600">框选鸟体区域重识别</span>
+            <button onclick="closeCropPanel()" style="background:none;border:none;font-size:1.3em;cursor:pointer;line-height:1">✕</button>
+        </div>
+        <p id="crop-hint" style="font-size:.85em;color:#888;margin:0 0 8px">拖动鼠标框选鸟体区域</p>
+        <canvas id="crop-canvas" style="display:block;cursor:crosshair;border:1px solid #ddd;border-radius:6px;touch-action:none"
+            onmousedown="onDown(event)" onmousemove="onMove(event)" onmouseup="onUp(event)"
+            ontouchstart="onDown(event)" ontouchmove="onMove(event)" ontouchend="onUp(event)">
+        </canvas>
+        <div style="display:flex;gap:8px;margin-top:10px">
+            <button id="do-identify-btn" onclick="doIdentify()" disabled
+                    style="background:#1976d2;color:#fff;border:none;border-radius:8px;padding:8px 24px;cursor:pointer;font-size:.95em">
+                识别选中区域
+            </button>
+            <button onclick="initCanvas(_cropImg); document.getElementById('do-identify-btn').disabled=true; document.getElementById('crop-hint').textContent='拖动鼠标框选鸟体区域'; document.getElementById('reidentify-results').innerHTML=''"
+                    style="background:#eee;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.95em">
+                重置
+            </button>
+        </div>
+        <div id="reidentify-results" style="margin-top:12px;max-height:260px;overflow-y:auto"></div>
+    </div>
+</div>
+{% endif %}
 
 {% endblock %}

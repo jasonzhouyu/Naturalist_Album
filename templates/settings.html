@@ -12,6 +12,21 @@
 <div class="batch-scan-form">
     <div class="import-card">
         <label>
+            <strong style="color:var(--text)">照片根目录</strong>
+            <small style="display:block;color:var(--text-muted);margin:0.3rem 0 0.5rem">
+                所有 source_path 相对于此目录解析。换环境后只需改这一个值。<br>
+                容器内示例：<code>/photos</code> &nbsp;|&nbsp; Windows 示例：<code>\\DX4600-HOMENAS\personal_folder\Photos</code>
+            </small>
+            <input id="photos-root" type="text" value="{{ settings.photos_root }}"
+                   placeholder="/photos" style="font-family:monospace">
+        </label>
+        <div id="root-error" class="error-message" style="display:none"></div>
+        <div id="root-ok" style="color:var(--success);display:none;margin-bottom:0.75rem;font-size:0.9rem">已保存</div>
+        <button onclick="saveRoot()" id="root-btn">保存根目录</button>
+    </div>
+
+    <div class="import-card" style="margin-top:1rem">
+        <label>
             <strong style="color:var(--text)">照片存储路径</strong>
             <small style="display:block;color:var(--text-muted);margin:0.3rem 0 0.5rem">
                 所有识别归档的照片和缩略图将保存在此路径下的 album/ 和 thumbs/ 目录中
@@ -42,6 +57,116 @@
       └── plant/</pre>
     </div>
 </div>
+
+<div class="import-card" style="margin-top:1.5rem">
+    <strong style="color:var(--text)">懂鸟识别 · webkey</strong>
+    <small style="display:block;color:var(--text-muted);margin:0.3rem 0 0.75rem">
+        webkey 有效期 7 天，过期后在此页面重新验证即可，无需命令行操作
+    </small>
+    <div id="dn-status-row" style="display:flex;align-items:center;gap:12px;margin-bottom:0.75rem">
+        <span id="dn-badge" style="padding:3px 10px;border-radius:20px;font-size:.82em;font-weight:600;background:#eee;color:#666">检测中…</span>
+        <button onclick="checkDnStatus()" id="dn-check-btn" class="secondary" style="padding:5px 14px;font-size:.85em">检测状态</button>
+    </div>
+
+    <!-- 验证流程（默认隐藏） -->
+    <div id="dn-verify-panel" style="display:none;border:1px solid #e0e0e0;border-radius:10px;padding:16px;margin-top:4px">
+        <p style="margin:0 0 10px;font-size:.88em;color:#555">
+            1. 微信扫描下方小程序码，打开懂鸟<br>
+            2. 左上角菜单 → 我的设置 → 拉到最底部 → <strong>核验身份</strong><br>
+            3. 输入验证码后点击下方「验证完成」
+        </p>
+        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+            <img id="dn-qr" src="" alt="懂鸟小程序码" style="width:140px;height:140px;border-radius:8px;border:1px solid #ddd">
+            <div>
+                <div style="font-size:.82em;color:#888;margin-bottom:4px">在小程序里输入此验证码</div>
+                <div id="dn-code" style="font-size:2.6em;font-weight:700;color:#d32f2f;letter-spacing:4px">——</div>
+            </div>
+        </div>
+        <button onclick="verifyDn()" id="dn-verify-btn" style="margin-top:14px;background:#1976d2;color:#fff;border:none;border-radius:8px;padding:8px 24px;cursor:pointer;font-size:.95em">
+            ✅ 验证完成
+        </button>
+        <span id="dn-verify-msg" style="margin-left:12px;font-size:.88em"></span>
+    </div>
+</div>
+
+<script>
+async function saveRoot() {
+    const val = document.getElementById('photos-root').value.trim();
+    const errDiv = document.getElementById('root-error');
+    const okDiv  = document.getElementById('root-ok');
+    errDiv.style.display = 'none'; okDiv.style.display = 'none';
+    if (!val) { errDiv.textContent = '请输入路径'; errDiv.style.display = 'block'; return; }
+    document.getElementById('root-btn').disabled = true;
+    try {
+        const resp = await fetch('/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({photos_root: val})
+        });
+        const data = await resp.json();
+        if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; }
+        else { okDiv.style.display = 'block'; setTimeout(() => okDiv.style.display = 'none', 3000); }
+    } catch(e) { errDiv.textContent = e.message; errDiv.style.display = 'block'; }
+    document.getElementById('root-btn').disabled = false;
+}
+
+let _dnPendingKey = '';
+
+async function checkDnStatus() {
+    const badge = document.getElementById('dn-badge');
+    const btn   = document.getElementById('dn-check-btn');
+    badge.textContent = '检测中…'; badge.style.background = '#eee'; badge.style.color = '#666';
+    btn.disabled = true;
+    try {
+        const resp = await fetch('/api/dongniao/status');
+        const data = await resp.json();
+        if (data.status === 'valid') {
+            badge.textContent = '✓ 有效'; badge.style.background = '#e8f5e9'; badge.style.color = '#2e7d32';
+            document.getElementById('dn-verify-panel').style.display = 'none';
+        } else if (data.status === 'invalid') {
+            badge.textContent = '已失效，需重新验证'; badge.style.background = '#ffebee'; badge.style.color = '#c62828';
+            _dnPendingKey = data.pending_key;
+            document.getElementById('dn-code').textContent = data.code;
+            if (data.qr_b64) document.getElementById('dn-qr').src = 'data:image/jpeg;base64,' + data.qr_b64;
+            document.getElementById('dn-verify-panel').style.display = 'block';
+        } else {
+            badge.textContent = '检测失败'; badge.style.background = '#fff3e0'; badge.style.color = '#e65100';
+        }
+    } catch(e) {
+        badge.textContent = '请求失败'; badge.style.background = '#fff3e0'; badge.style.color = '#e65100';
+    }
+    btn.disabled = false;
+}
+
+async function verifyDn() {
+    const btn = document.getElementById('dn-verify-btn');
+    const msg = document.getElementById('dn-verify-msg');
+    btn.disabled = true; msg.textContent = '验证中…'; msg.style.color = '#888';
+    try {
+        const resp = await fetch('/api/dongniao/verify', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({pending_key: _dnPendingKey})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            msg.textContent = '✓ 验证成功，已保存'; msg.style.color = '#2e7d32';
+            document.getElementById('dn-badge').textContent = '✓ 有效';
+            document.getElementById('dn-badge').style.background = '#e8f5e9';
+            document.getElementById('dn-badge').style.color = '#2e7d32';
+            setTimeout(() => document.getElementById('dn-verify-panel').style.display = 'none', 2000);
+        } else {
+            msg.textContent = '未验证通过，请先在微信小程序完成核验'; msg.style.color = '#c62828';
+        }
+    } catch(e) {
+        msg.textContent = '请求失败: ' + e.message; msg.style.color = '#c62828';
+    }
+    btn.disabled = false;
+}
+
+// 页面加载时自动检测一次
+checkDnStatus();
+</script>
 
 <script>
 async function doSave() {

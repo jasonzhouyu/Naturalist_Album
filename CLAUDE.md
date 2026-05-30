@@ -139,10 +139,28 @@ FastAPI matches routes in registration order. Specific routes MUST register befo
 
 - IP: `192.168.31.233`
 - SSH: port 22, user `pcwork`
-- Docker container: `relic-album`, port 8000
+- Docker container: `nature-album`, port 8000
 - Deploy: `python deploy_nas.py` (packages → SCP → docker build+run)
 - NAS firewall sometimes blocks SSH — if deploy fails with connection error, check SSH service on NAS web admin
 - NAS is behind transparent proxy (mihomo on router), but Docker build uses `--network host` to bypass
+
+### 已知部署坑（2026-05-26 首次成功部署）
+
+**坑1：pip 超时（`files.pythonhosted.org` 被墙）**
+- 症状：`docker compose build --no-cache` 跑到 pydantic 下载时 ReadTimeoutError
+- 原因：`Dockerfile` 没配 pip 镜像，国内 NAS 直连 PyPI 被墙
+- 修复：`Dockerfile` 加阿里云镜像源：
+  ```dockerfile
+  RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+      pip config set global.trusted-host mirrors.aliyun.com && \
+      pip install --no-cache-dir -r requirements.txt
+  ```
+
+**坑2：`inat-jwt-refresher` sidecar 构建失败**
+- 症状：Playwright 从 npmmirror 下载 `chromium-headless-shell v1223` 返回 404；Docker Hub 拉基础镜像超时
+- 原因：npmmirror 没有该 Playwright 版本；NAS Docker 无法直连 Docker Hub
+- 修复：`docker-compose.yml` 给 `inat-jwt-refresher` 加 `profiles: ["inat"]`，默认部署跳过它
+- 需要 iNat 功能时手动启：`docker compose --profile inat up -d`
 
 ## Template notes
 
@@ -151,6 +169,12 @@ FastAPI matches routes in registration order. Specific routes MUST register befo
 - All templates use `request` as first arg to `TemplateResponse` (Starlette 1.0.0 requirement)
 - Category labels in templates: `CATEGORY_LABELS = {"relic": "文物", "animal": "动物", "plant": "植物"}`
 - Breadcrumb pattern: `<ul class="breadcrumb">` with auto separators via CSS
+
+## Recent changes (2026-05-26 session)
+
+- **首次 NAS 部署成功**：`python deploy_nas.py` → `http://192.168.31.233:8000`
+- **Dockerfile**：加阿里云 pip 镜像，解决 PyPI 被墙超时问题
+- **docker-compose.yml**：`inat-jwt-refresher` 加 `profiles: ["inat"]`，默认不构建/启动
 
 ## Recent changes (2026-05-25 session)
 

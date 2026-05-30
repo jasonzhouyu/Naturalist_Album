@@ -1,10 +1,17 @@
 import json
+import platform
 from pathlib import Path
 
 SETTINGS_FILE = Path(__file__).resolve().parent / "settings.json"
 
+def _default_photos_root() -> str:
+    if platform.system() == "Windows":
+        return r"\\DX4600-HOMENAS\personal_folder\Photos"
+    return "/photos"
+
 DEFAULTS = {
     "storage_path": str(Path(__file__).resolve().parent),
+    "photos_root": _default_photos_root(),
 }
 
 
@@ -29,3 +36,7 @@ def get_storage_path() -> Path:
     p = Path(s["storage_path"]).resolve()
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def get_photos_root() -> str:
+    return load_settings().get("photos_root", _default_photos_root())
